@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "chatllm"
+version = "0.1.0"
+description = "Interact with Local LLMs and LLM Apis using Gradio and CLI"
+authors = ["Christy George <christy.george@gmail.com>"]
+license = "Unlicense"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+gradio = "^3.45.2"
+llama-cpp-python = "^0.2.9"
+openai = "^0.28.1"
+python-dotenv = "^1.0.0"
+tiktoken = "^0.5.1"
+torch = "^2.0.1"
+transformers = "^4.33.3"
+accelerate = "^0.23.0"
+bitsandbytes = "^0.41.1"
+replicate = "^0.14.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
