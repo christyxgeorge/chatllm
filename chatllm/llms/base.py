@@ -1,10 +1,13 @@
 """Base Language Model"""
 from __future__ import annotations
 
+import logging
 import random
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Any, AsyncGenerator, List, Optional, Type
+
+logger = logging.getLogger(__name__)
 
 
 class LLMRegister(object):
@@ -16,7 +19,7 @@ class LLMRegister(object):
 
     def __call__(self, clz: Type[BaseLLMProvider]) -> Type[BaseLLMProvider]:
         """Register the list of supported models"""
-        print(f"Adding LLM Provider = {self.llm_key} // {clz}")
+        logger.info(f"Adding LLM Provider = {self.llm_key} // {clz}")
         BaseLLMProvider.register_llm(self.llm_key, clz)
         return clz
 

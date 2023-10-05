@@ -1,8 +1,8 @@
 """Interface from Gradio/CLI to the LLM models."""
-import asyncio
 import json
+import logging
 import time
-from typing import Any, Generator, List
+from typing import List
 
 from chatllm.constants import (  # noqa: F401
     DEFAULT_MAX_TOKENS,
@@ -11,7 +11,7 @@ from chatllm.constants import (  # noqa: F401
 )
 from chatllm.llms.base import BaseLLMProvider
 
-# from chatllm.llms import HFPipeline, LlamaCpp, OpenAIChat, ReplicateApi
+logger = logging.getLogger(__name__)
 
 
 class LLMController:
