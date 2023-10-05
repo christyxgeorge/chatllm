@@ -43,6 +43,10 @@ class BaseLLMProvider(ABC):
         """Load the model."""
 
     @abstractmethod
+    def get_params(self) -> List[str]:
+        """Return Parameters supported by the model"""
+
+    @abstractmethod
     def get_token_count(self, prompt: str) -> int:
         """Return the number of tokens in the prompt."""
 

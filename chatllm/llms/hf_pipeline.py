@@ -31,6 +31,16 @@ class HFPipeline(BaseLLMProvider):
         """
         pass
 
+    def get_params(self) -> List[str]:
+        """Return Parameters supported by the model"""
+        return {
+            "max_tokens": 2500,
+            "temperature": 0.8,
+            "top_k": 3,
+            "top_p": 0.9,
+            "length_penalty": 1,
+        }
+
     def get_token_count(self, prompt: str) -> int:
         """Return the number of tokens in the prompt."""
         tokens = self.enc(prompt)["input_ids"]

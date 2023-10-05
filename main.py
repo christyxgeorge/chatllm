@@ -24,11 +24,11 @@ def parse_args():
     return args
 
 
-def set_env(verbose=False):
+def set_env(debug=False):
     """Load Environment Variables..."""
 
     cur_dir = os.path.abspath(os.getcwd())
-    if verbose:
+    if debug:
         config = dotenv_values(".env")
         print(f"Current directory = {cur_dir}; Dotenv Values = {config}")
 
@@ -55,10 +55,10 @@ def gradio_app(args):
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        gr_app = setup_gradio()
+        demo = setup_gradio()
 
     # Launch Gradio App with Queuing to support streaming!
-    gr_app.queue(
+    demo.queue(
         concurrency_count=args.concurrency_count,
         max_size=100,
         status_update_rate=10,
@@ -68,7 +68,7 @@ def gradio_app(args):
 
 if __name__ == "__main__":
     args = parse_args()
-    set_env(verbose=args.verbose)
+    set_env(debug=args.debug)
     initialize_config(verbose=args.verbose, debug=args.debug)
 
     # Start Gradio App

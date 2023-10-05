@@ -2,16 +2,13 @@
 import json
 import logging
 import time
-from typing import List
+from typing import Any, List
 
-from chatllm.constants import (  # noqa: F401
-    DEFAULT_MAX_TOKENS,
-    DEFAULT_MODEL,
-    DEFAULT_TEMPERATURE,
-)
 from chatllm.llms.base import BaseLLMProvider
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_MODEL = "openai:gpt-3.5-turbo"
 
 
 class LLMController:
@@ -32,7 +29,7 @@ class LLMController:
 
     def get_default_model(self) -> str:
         """return the default model"""
-        return f"openai:{DEFAULT_MODEL}"
+        return DEFAULT_MODEL
 
     def load_model(self, model=None):
         """Load the model"""
@@ -42,22 +39,20 @@ class LLMController:
         self.llm = llm_info["class"](model_name=model_name)
         # asyncio.run(self.llm.load())
 
+    def get_model_params(self, model_name):
+        return self.llm.get_params()
+
     async def run_stream(
         self,
         question,
-        history,
         system_prompt="",
-        temperature=DEFAULT_TEMPERATURE,
-        max_tokens=DEFAULT_MAX_TOKENS,
         verbose=True,
+        **kwargs,
     ):
-        kwargs = {"temperature": temperature, "max_tokens": max_tokens}
         if verbose:
             print("=" * 130)
             print(f"Question: {question}")
-            print(
-                f"    Model: {self.llm.model_name}, Temp = {temperature}, Max Tokens = {max_tokens}"
-            )
+            print(f"    Model: {self.llm.model_name}, Params = {json.dumps(kwargs or {})}")
 
         start_time = time.time()
         try:
@@ -96,23 +91,19 @@ class LLMController:
                 print("=" * 130)
         except Exception as e:
             print(f"Exception = {e}")
-            yield f"<span style='color:red'>*Unable to generate response* [{e}]</span>"
+            yield f"<span style='color:red'>*Error: Unable to generate response* [{e}]</span>"
 
     async def run_query(
         self,
         question,
-        history,
         system_prompt="",
-        temperature=DEFAULT_TEMPERATURE,
-        max_tokens=DEFAULT_MAX_TOKENS,
         verbose=True,
-    ):
-        # print(f"Locals = {locals()}")
-        kwargs = {"temperature": temperature, "max_tokens": max_tokens}
+        **kwargs,
+    ) -> Any:
         if verbose:
             print("=" * 130)
             print(f"Question: {question}")
-            print(f"    Model: {self.llm.model}, Temp = {temperature}, Max Tokens = {max_tokens}")
+            print(f"    Model: {self.llm.model_name}, Params = {json.dumps(kwargs or {})}")
 
         start_time = time.time()
         prompt_tokens = self.llm.get_token_count(question)

@@ -5,7 +5,6 @@ import glob
 import os
 from typing import Any, AsyncGenerator, Generator, List, Optional
 
-from chatllm.constants import DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE
 from chatllm.llms.base import BaseLLMProvider, LLMRegister
 from llama_cpp import Llama
 
@@ -26,6 +25,16 @@ class LlamaCpp(BaseLLMProvider):
         as we load the model in the constructor.
         """
         pass
+
+    def get_params(self) -> List[str]:
+        """Return Parameters supported by the model"""
+        return {
+            "max_tokens": 2500,
+            "temperature": 0.8,
+            "top_k": 3,
+            "top_p": 0.9,
+            "length_penalty": 1,
+        }
 
     def get_token_count(self, prompt: str) -> int:
         """Return the number of tokens in the prompt."""

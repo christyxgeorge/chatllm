@@ -30,6 +30,16 @@ class ReplicateApi(BaseLLMProvider):
         """
         pass
 
+    def get_params(self) -> List[str]:
+        """Return Parameters supported by the model"""
+        return {
+            "max_tokens": 2500,
+            "temperature": 0.8,
+            "top_k": 3,
+            "top_p": 0.9,
+            "length_penalty": 1,
+        }
+
     @staticmethod
     def get_supported_models() -> List[str]:
         """Return a list of supported models."""

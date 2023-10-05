@@ -34,6 +34,14 @@ class OpenAIChat(BaseLLMProvider):
         """Load the model. Nothing to do in the case of OpenAI"""
         pass
 
+    def get_params(self) -> List[str]:
+        """Return Parameters supported by the model"""
+        return {
+            "max_tokens": {"min": 0, "max": 4096, "default": 128, "step": 64},
+            "temperature": {"min": 0, "max": 2, "default": 1, "step": 0.1},
+            "top_p": {"min": 0, "max": 1, "default": 1, "step": 0.1},
+        }
+
     def get_token_count(self, prompt: str) -> int:
         """Return the number of tokens in the prompt."""
         tokens = self.encoding.encode(prompt)
@@ -51,9 +59,6 @@ class OpenAIChat(BaseLLMProvider):
         verbose: bool = False,
         **kwargs: Any,
     ) -> List[str]:
-        kwargs.setdefault("temperature", 0.9)
-        kwargs.setdefault("max_tokens", 100)
-        kwargs.setdefault("top_p", 1)
         kwargs.setdefault("frequency_penalty", 0.0)
         kwargs.setdefault("presence_penalty", 0.6)
 
@@ -75,9 +80,6 @@ class OpenAIChat(BaseLLMProvider):
         **kwargs: Any,
     ) -> AsyncGenerator[Any]:
         """Pass a single prompt value to the model and stream model generations."""
-        kwargs.setdefault("temperature", 0.9)
-        kwargs.setdefault("max_tokens", 100)
-        kwargs.setdefault("top_p", 1)
         kwargs.setdefault("frequency_penalty", 0.0)
         kwargs.setdefault("presence_penalty", 0.6)
 
