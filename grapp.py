@@ -1,9 +1,8 @@
 """Setup the Gradio App"""
-import copy
 import logging
+from typing import List
 
 import gradio as gr
-from altair import param
 
 # Import this after setting the env.
 from chatllm.llm_controller import LLMController
@@ -71,13 +70,12 @@ def get_param_values(params, param_name: str, default_value: int | float):
     return kwargs
 
 
-def load_demo(model_name, max_tokens, temperature, top_k, top_p, length_penalty):
+def load_demo(model_name, parameters: List[gr.Slider]):
     """Load the Demo"""
-    # Get all the parameters from the local arguments
-    local_args = {k: v for k, v in locals().items() if k != "model_name"}
+    arg_values = {p.elem_id: p.value for p in parameters}
     llm_controller.load_model(model_name)
     params = llm_controller.get_model_params(model_name)
-    param_values = {k: get_param_values(params, k, local_args[k]) for k in local_args.keys()}
+    param_values = {k: get_param_values(params, k, arg_values[k]) for k in arg_values.keys()}
     values = {k: v["value"] for k, v in param_values.items()}
     state = {"stream_mode": True, "model": model_name, "params": values}
     logger.info(f"Loaded Demo: state = {state}")
@@ -94,11 +92,9 @@ def load_demo(model_name, max_tokens, temperature, top_k, top_p, length_penalty)
 
 
 # Event Handlers Implemented
-def model_changed(
-    state: gr.State, model_name: str, max_tokens, temperature, top_k, top_p, length_penalty
-):
+def model_changed(state: gr.State, model_name: str, parameters: List[gr.Slider]):
     """Handle Model Change"""
-    local_args = {k: v for k, v in locals().items() if k != "model_name"}
+    arg_values = {p.elem_id: p.value for p in parameters}
     param_values = state["params"]
     if model_name != state["model"]:
         """Load Model only if the model has changed"""
@@ -107,7 +103,7 @@ def model_changed(
             llm_controller.load_model(model_name)
             params = llm_controller.get_model_params(model_name)
             param_values = {
-                k: get_param_values(params, k, local_args[k]) for k in local_args.keys()
+                k: get_param_values(params, k, arg_values[k]) for k in arg_values.keys()
             }
             values = {k: v["value"] for k, v in param_values.items()}
             state["params"] = values
@@ -293,11 +289,19 @@ def setup_gradio(verbose=False):
 
         gr.Examples(examples=examples, inputs=user_prompt)
 
+        parameters = [
+            max_tokens,
+            temperature,
+            top_k,
+            top_p,
+            length_penalty,
+        ]
+
         # Event Handlers
         model_dropdown.change(
-            model_changed,
-            inputs=[state, model_dropdown, max_tokens, temperature, top_k, top_p, length_penalty],
-            outputs=[state, model_dropdown, max_tokens, temperature, top_k, top_p, length_penalty],
+            lambda x, y, *params: model_changed(x, y, parameters),
+            inputs=[state, model_dropdown, *parameters],
+            outputs=[state, model_dropdown, *parameters],
         )
         max_tokens.change(
             fn=lambda state, y: parameter_changed(state, max_tokens, y),
@@ -353,25 +357,9 @@ def setup_gradio(verbose=False):
         )
 
         demo.load(
-            load_demo,
-            [
-                model_dropdown,
-                max_tokens,
-                temperature,
-                top_k,
-                top_p,
-                length_penalty,
-            ],
-            [
-                state,
-                model_dropdown,
-                parameter_row,
-                max_tokens,
-                temperature,
-                top_k,
-                top_p,
-                length_penalty,
-            ],
+            lambda x, *params: load_demo(x, parameters),
+            [model_dropdown, *parameters],
+            [state, model_dropdown, parameter_row, *parameters],
         )
 
     return demo
