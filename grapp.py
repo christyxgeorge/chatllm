@@ -21,8 +21,15 @@ TITLE_MARKDOWN = f"""
 <h1 style='text-align: center;'>{title}</h1>
 """
 
-system_message = "\nYou are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe.  Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.\n\nIf a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don't know the answer to a question, please don't share false information."
-css = """.toast-wrap { display: none !important } """
+simple_system_prompt = "You are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe."
+long_system_prompt = """
+You are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. 
+Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content.
+Please ensure that your responses are socially unbiased and positive in nature.
+
+If a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct.
+If you don't know the answer to a question, please don't share false information.
+"""
 
 examples = [
     ["Hello there! How are you doing?"],
@@ -72,11 +79,12 @@ def load_demo(model_name, max_tokens, temperature, top_k, top_p, length_penalty)
     params = llm_controller.get_model_params(model_name)
     param_values = {k: get_param_values(params, k, local_args[k]) for k in local_args.keys()}
     values = {k: v["value"] for k, v in param_values.items()}
-    state = {"active_tab": "streaming_tab", "model": model_name, "params": values}
+    state = {"stream_mode": True, "model": model_name, "params": values}
     logger.info(f"Loaded Demo: state = {state}")
     return (
         state,
-        model_name,
+        gr.Dropdown(model_name, visible=True),  # Model Dropdown - Make visible
+        gr.Accordion(open=True, visible=True),  # parameter_row - Open and visible
         gr.Slider(**param_values["max_tokens"]),
         gr.Slider(**param_values["temperature"]),
         gr.Slider(**param_values["top_k"]),
@@ -90,7 +98,6 @@ def model_changed(
     state: gr.State, model_name: str, max_tokens, temperature, top_k, top_p, length_penalty
 ):
     """Handle Model Change"""
-    logger.debug(f"Locals = {locals()}")
     local_args = {k: v for k, v in locals().items() if k != "model_name"}
     param_values = state["params"]
     if model_name != state["model"]:
@@ -127,47 +134,42 @@ def parameter_changed(state: gr.State, parameter: gr.Slider, value: int | float)
     return state
 
 
+def mode_changed(state: gr.State, active_mode: str):
+    state.update({"stream_mode": active_mode})
+    return state
+
+
 def vote(data: gr.LikeData):
     action = "upvoted" if data.liked else "downvoted"
     print(f"You {action} this response: [{data.value}]")
     # gr.Info(f"You {action} this response: [{data.value}]")
 
 
-def tab_changed(state: gr.State, active_tab: str) -> gr.State:
-    logger.debug(f"Locals = {locals()}")
-    state.update({"active_tab": active_tab})
-    return state
+def add_user_message(user_prompt: str, chat_history):
+    chat_message = (user_prompt, None)
+    return ("", chat_history + [chat_message], gr.Button(visible=False), gr.Button(visible=True))
 
 
-def add_user_message(state: gr.State, user_input: str, stream_history, batch_history):
-    logger.debug(f"Locals [add_user_message] = {locals()}")
-    chat_message = (user_input, None)
-    if state["active_tab"] == "streaming_tab":
-        return ("", stream_history + [chat_message], batch_history)
-    else:
-        return ("", stream_history, batch_history + [chat_message])
-
-
-async def submit_query(state: gr.State, stream_history, batch_history, system_prompt: str):
-    logger.info(f"Locals [submit_query] = {locals()} / State = {state}")
-    kwargs = copy.copy(state["params"])
-    kwargs.pop("top_k", None)
-    kwargs.pop("length_penalty", None)
-    if state["active_tab"] == "streaming_tab":
-        query = stream_history[-1][0]
-        logger.info(f"Running Streaming Query: {query} / {kwargs}")
+async def submit_query(state: gr.State, chat_history, system_prompt: str):
+    # Pop out unsupported kwargs
+    params = llm_controller.get_model_params(state["model"])
+    kwargs = {k: v for k, v in state["params"].items() if k in params}
+    query = chat_history[-1][0]
+    mode = "stream" if state["stream_mode"] else "batch"
+    logger.info(f"Running {mode} Query: {query} / {kwargs}")
+    if state["stream_mode"]:
         stream = llm_controller.run_stream(query, system_prompt=system_prompt, **kwargs)
         async for response_text in stream:
-            stream_history[-1][1] = response_text
-            yield stream_history, batch_history
+            chat_history[-1][1] = response_text
+            yield chat_history, gr.Button(visible=False), gr.Button(visible=True)
+        # Last yield to restore the submit button
+        yield chat_history, gr.Button(visible=True), gr.Button(visible=False)
     else:
-        query = batch_history[-1][0]
-        logger.info(f"Running Batched Query: {query}")
         response_text = await llm_controller.run_query(
             query, system_prompt=system_prompt, **kwargs
         )
-        batch_history[-1][1] = response_text
-        yield stream_history, batch_history
+        chat_history[-1][1] = response_text
+        yield chat_history, gr.Button(visible=True), gr.Button(visible=False)
 
 
 # ===========================================================================================
@@ -192,17 +194,33 @@ def setup_gradio(verbose=False):
                     value=llm_controller.get_default_model(),
                     label="Model",
                     info=f"Choose from one of the supported models: {len(model_list)} found!",
+                    visible=False,
                 )
             with gr.Column(scale=8):
-                system_prompt = gr.Textbox("", label="System prompt (Optional)")
+                with gr.Row():
+                    stream_mode = gr.Radio(
+                        [("Streaming", True), ("Batched", False)],
+                        value=True,
+                        label="Mode",
+                        scale=2,
+                        show_label=True,
+                        inline=True,
+                        visible=True,
+                    )
+                    system_prompt = gr.Textbox(
+                        value=simple_system_prompt,  # or long_system_prompt
+                        label="System prompt (Optional)",
+                        placeholder="Enter the System prompt and place enter",
+                        scale=8,
+                    )
 
         with gr.Row():
             with gr.Column(scale=2):
-                with gr.Accordion("Parameters", open=True, visible=True) as parameter_row:
+                with gr.Accordion("Parameters", open=False, visible=False) as parameter_row:
                     max_tokens = gr.Slider(
                         minimum=0,
-                        maximum=5000,  # data['params']['context_length']
-                        value=500,  # data["params"]["max_tokens"],
+                        maximum=5000,
+                        value=500,
                         step=50,
                         interactive=True,
                         label="Max output tokens",
@@ -212,7 +230,7 @@ def setup_gradio(verbose=False):
                     temperature = gr.Slider(
                         minimum=0.01,
                         maximum=1,
-                        value=0.7,  # data["params"]["temperature"],
+                        value=0.7,
                         step=0.1,
                         interactive=True,
                         label="Temperature",
@@ -222,7 +240,7 @@ def setup_gradio(verbose=False):
                     top_k = gr.Slider(
                         minimum=1,
                         maximum=5,
-                        value=3,  # data["params"]["top_k"],
+                        value=3,
                         step=1,
                         interactive=True,
                         label="Top k",
@@ -231,7 +249,7 @@ def setup_gradio(verbose=False):
                     top_p = gr.Slider(
                         minimum=0,
                         maximum=1,
-                        value=1,  # data["params"]["top_p"],
+                        value=1,
                         step=0.1,
                         interactive=True,
                         label="Top p",
@@ -241,7 +259,7 @@ def setup_gradio(verbose=False):
                     length_penalty = gr.Slider(
                         minimum=1,
                         maximum=5,
-                        value=3,  # data["params"]["length_penalty"],
+                        value=3,
                         step=0.1,
                         interactive=True,
                         label="length_penalty",
@@ -249,37 +267,31 @@ def setup_gradio(verbose=False):
                     )
 
             with gr.Column(scale=8):
-                with gr.Tabs() as mode_tabs:
-                    with gr.Tab("Streaming", id="streaming_tab") as streaming_tab:
-                        chatbot_stream = gr.Chatbot(
-                            avatar_images=("./images/user.png", "./images/bot.png"),
-                            bubble_full_width=False,
-                            # layout="panel",  # or 'bubble' # [Deprecated]
-                        )
-                    with gr.Tab("Batched", id="batched_tab") as batched_tab:
-                        chatbot_batch = gr.Chatbot(
-                            avatar_images=("./images/user.png", "./images/bot.png"),
-                            bubble_full_width=False,
-                            # layout="bubble",  # or 'panel' # [Deprecated]
-                        )
-                with gr.Row():
-                    with gr.Column(scale=8):
-                        textbox = gr.Textbox(
-                            show_label=False,
-                            placeholder="Enter text and press ENTER",
-                            visible=True,
-                        ).style(container=False)
-                    with gr.Column(scale=1, min_width=60):
-                        submit_btn = gr.Button(value="Submit", visible=True)
-                with gr.Row(visible=True) as button_row:
-                    flag_btn = gr.Button(value="⚠️  Flag", interactive=True)
-                    clear_btn = gr.ClearButton(
-                        [chatbot_stream, chatbot_batch], value="🗑️ Clear history", interactive=True
+                chatbot = gr.Chatbot(
+                    avatar_images=("./images/user.png", "./images/bot.png"),
+                    bubble_full_width=False,
+                    # layout="panel",  # or 'bubble' # [Deprecated]
+                )
+                with gr.Row(visible=True) as submit_row:
+                    user_prompt = gr.Textbox(
+                        show_label=False,
+                        placeholder="Enter text and press ENTER",
+                        scale=8,
+                        visible=True,
+                    ).style(container=False)
+                    submit_btn = gr.Button(
+                        value="Submit", scale=2, visible=True, variant="primary"
+                    )
+                    stop_btn = gr.Button(value="Stop", scale=2, visible=False, variant="stop")
+                    gr.ClearButton(
+                        [chatbot],
+                        value="🗑️ Clear history",
+                        scale=2,
+                        variant="secondary",
+                        interactive=True,
                     )
 
-        gr.Examples(examples=examples, inputs=textbox)
-        # url_params = gr.JSON(visible=False)  # TODO: Why??
-        # btn_list = [flag_btn, clear_btn]
+        gr.Examples(examples=examples, inputs=user_prompt)
 
         # Event Handlers
         model_dropdown.change(
@@ -313,37 +325,33 @@ def setup_gradio(verbose=False):
             outputs=[state],
         )
 
-        streaming_tab.select(
-            lambda state: tab_changed(state, "streaming_tab"), inputs=[state], outputs=[state]
-        )
-        batched_tab.select(
-            lambda state: tab_changed(state, "batched_tab"), inputs=[state], outputs=[state]
-        )
-        chatbot_stream.like(vote, None, None)
-        chatbot_batch.like(vote, None, None)
-
-        textbox.submit(
+        chatbot.like(vote, None, None)
+        user_prompt.submit(
             add_user_message,
-            [state, textbox, chatbot_stream, chatbot_batch],
-            [textbox, chatbot_stream, chatbot_batch],
+            [user_prompt, chatbot],
+            [user_prompt, chatbot, submit_btn, stop_btn],
             queue=False,
         ).then(
             submit_query,
-            inputs=[state, chatbot_stream, chatbot_batch, system_prompt],
-            outputs=[chatbot_stream, chatbot_batch],
+            inputs=[state, chatbot, system_prompt],
+            outputs=[chatbot, submit_btn, stop_btn],
         )
         submit_btn.click(
             add_user_message,
-            [state, textbox, chatbot_stream, chatbot_batch],
-            [textbox, chatbot_stream, chatbot_batch],
+            [user_prompt, chatbot],
+            [user_prompt, chatbot, submit_btn, stop_btn],
             queue=False,
         ).then(
             submit_query,
-            inputs=[state, chatbot_stream, chatbot_batch, system_prompt],
-            outputs=[chatbot_stream, chatbot_batch],
+            inputs=[state, chatbot, system_prompt],
+            outputs=[chatbot, submit_btn, stop_btn],
+        )
+        stream_mode.change(
+            mode_changed,
+            inputs=[state, stream_mode],
+            outputs=[state],
         )
 
-        # flag_btn.click(flag_last_response, [state], [textbox, upvote_btn, downvote_btn, flag_btn])
         demo.load(
             load_demo,
             [
@@ -357,13 +365,13 @@ def setup_gradio(verbose=False):
             [
                 state,
                 model_dropdown,
+                parameter_row,
                 max_tokens,
                 temperature,
                 top_k,
                 top_p,
                 length_penalty,
             ],
-            # _js=get_window_url_params,
         )
 
     return demo
