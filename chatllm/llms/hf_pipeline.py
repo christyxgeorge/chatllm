@@ -1,11 +1,16 @@
 """Language Model To Interface With Hugging Face Models"""
 from __future__ import annotations
 
-from typing import Any, AsyncGenerator, Generator, List, Optional, Tuple
+import logging
+from typing import Any, AsyncGenerator, Generator, List, Tuple
 
 import torch
-import transformers
+from chatllm.llm_response import LLMResponse
 from chatllm.llms.base import BaseLLMProvider, LLMRegister
+from chatllm.prompt import PromptValue
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+logger = logging.getLogger(__name__)
 
 
 @LLMRegister("hf")
@@ -14,74 +19,108 @@ class HFPipeline(BaseLLMProvider):
 
     def __init__(self, model_name: str, **kwargs) -> None:
         super().__init__(model_name, **kwargs)
-        # self.pipeline= pipeline(model="gpt2")
-        self.pipeline = transformers.pipeline(
-            "text-generation",
-            model=model_name,
-            # model_kwargs={"load_in_8bit": True},
-            torch_dtype=torch.float32 if model_name == "gpt2" else torch.float16,
-            # device_map="cpu",
-        )
-        self.enc = self.pipeline.tokenizer
+        self.llm = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+        logger.info(f"Tokenizer initialized {self.tokenizer}")
 
     async def load(self, **kwargs: Any) -> None:
         """
-        Load the model. Nothing to do in the case of LlamaCpp
+        Load the model. Nothing to do in the case of Hugging face Hub
         as we load the model in the constructor.
         """
         pass
 
     def get_params(self) -> List[str]:
-        """Return Parameters supported by the model"""
+        """
+        Return Parameters supported by the model
+        Reference: https://huggingface.co/docs/transformers/main_classes/text_generation
+        """
+
         return {
-            "max_tokens": 2500,
-            "temperature": 0.8,
+            "max_tokens": 128,
+            "temperature": 1,  # Error if it a small value like 0.1
             "top_k": 3,
             "top_p": 0.9,
             "length_penalty": 1,
         }
 
     def get_token_count(self, prompt: str) -> int:
-        """Return the number of tokens in the prompt."""
-        tokens = self.enc(prompt)["input_ids"]
+        """
+        Return the number of tokens in the prompt
+        """
+        tokens = self.tokenizer(prompt)["input_ids"]
         return len(tokens)
 
-    def format_prompt(self, prompt: str) -> Tuple(str, int):
+    def format_prompt(self, prompt_value: PromptValue) -> str:
         """Format the prompt and return the number of tokens in the prompt."""
-        formatted_prompt = f"Question: {prompt} Answer: " if prompt else ""
-        num_tokens = self.get_token_count(formatted_prompt)
-        return formatted_prompt, num_tokens
+        # formatted_prompt = f"Question: {prompt} Answer: " if prompt else ""
+        formatted_prompt = prompt_value.to_string()
+        return formatted_prompt  # , self.get_token_count(formatted_prompt)
 
     @staticmethod
     def get_supported_models() -> List[str]:
         """Return a list of supported models."""
-        return ["gpt2"]  # , "TheBloke/Llama-2-7B-fp16"]
+        return [
+            "gpt2",
+            "microsoft/phi-1_5",
+            "roneneldan/TinyStories-33M",
+            # "TheBloke/Llama-2-7B-fp16"],
+        ]
+
+    def validate_kwargs(self, **kwargs):
+        """Validate the kwargs for the model"""
+        kwargs["max_new_tokens"] = kwargs.pop("max_tokens", 2500)  # Rename to max_new_tokens
+        kwargs["do_sample"] = True
+        kwargs["pad_token_id"] = self.tokenizer.pad_token_id
+
+        # To check multiple sequences
+        if self.model_name in ["roneneldan/TinyStories-33M"]:
+            logger.info(f"Setting num_beams=4 and num_return_sequences=4")
+            kwargs["num_beams"] = 4
+            kwargs["num_return_sequences"] = 4
+        print(f"Validated kwargs = {kwargs}")
+        return kwargs
 
     async def generate(
         self,
-        input_prompt: str,
+        prompt_value: PromptValue,
         *,
         verbose: bool = False,
         **kwargs: Any,
     ) -> List[str]:
-        formatted_prompt, num_tokens = self.format_prompt(input_prompt)
-        hf_response = self.pipeline(formatted_prompt)
-        result = self.get_response_template(num_prompt_tokens=num_tokens, usage=True)
-        if hf_response:
-            ## Strip Question and NBSPs(0xa0)
-            response_texts = (
-                hf_response[0]["generated_text"].replace(formatted_prompt, "").replace("\xa0", "")
+        formatted_prompt = self.format_prompt(prompt_value)
+        input_tokens = self.tokenizer.encode(formatted_prompt, return_tensors="pt")
+        num_tokens = torch.numel(input_tokens)
+        if verbose:
+            logger.info(
+                f"Prompt [{len(formatted_prompt)} chars, {num_tokens} tkns] = {formatted_prompt}"
             )
-            out_tokens = self.get_token_count(hf_response[0]["generated_text"])
-            result["usage"]["completion_tokens"] = out_tokens
-            result["usage"]["total_tokens"] = num_tokens + out_tokens
-            result["choices"] = self.format_choice(response_texts)
 
+        kwargs = self.validate_kwargs(**kwargs)
+
+        hf_response = self.llm.generate(input_tokens, **kwargs)
+        out_tokens = torch.numel(hf_response)  # sum([len(rt) for rt in zipped_tokens])
+        llm_response = LLMResponse(
+            model=self.model, prompt_tokens=num_tokens, completion_tokens=out_tokens
+        )
+        if out_tokens:
+            ## Strip Question and NBSPs(0xa0)
+            response_texts = [
+                "".join(self.tokenizer.batch_decode(seq, skip_special_tokens=True))
+                for seq in hf_response
+            ]
+            result = llm_response.get_result(response_texts)
+        if verbose:
+            logger.info(
+                f"Number of output tokens from {self.model_name} = {out_tokens} from {len(hf_response)} sequences"
+            )
         return result
 
     async def generate_stream(
         self,
-        input_prompt: str,
+        prompt_value: PromptValue,
         *,
         verbose: bool = False,
         **kwargs: Any,
@@ -91,30 +130,35 @@ class HFPipeline(BaseLLMProvider):
         Streaming not supported for HF models, so we similute a token-by-token async generation
         from the entire result
         """
-        print("Streaming not supported for HF models, Using generate instead")
-        formatted_prompt, num_tokens = self.format_prompt(input_prompt)
+        logger.warn("Streaming not supported for HF models, Simulating generate instead")
+        formatted_prompt = self.format_prompt(prompt_value)
+        input_tokens = self.tokenizer.encode(formatted_prompt, return_tensors="pt")
+        num_tokens = torch.numel(input_tokens)
+        if verbose:
+            logger.info(
+                f"Prompt [{len(formatted_prompt)} chars, {num_tokens} tkns] = {formatted_prompt}"
+            )
+
+        kwargs = self.validate_kwargs(**kwargs)
 
         async def async_generator() -> Generator[Any]:
-            hf_response = self.pipeline(formatted_prompt)
-            result = self.get_response_template(num_prompt_tokens=num_tokens, usage=False)
-            if hf_response:
-                ## Strip Question and NBSPs(0xa0)
-                response_text = (
-                    hf_response[0]["generated_text"]
-                    .replace(formatted_prompt, "")
-                    .replace("\xa0", "")
-                )
-                out_tokens = self.get_token_count(response_text)
-                print(f"Number of output tokens from {self.model_name} = {out_tokens}")
-                tokens = self.enc.batch_decode(self.enc(response_text)["input_ids"])
-                token = tokens.pop(0) if tokens else None
-                while token:
-                    result["choices"] = self.format_delta(token)
-                    token = tokens.pop(0) if tokens else None
+            hf_response = self.llm.generate(input_tokens, **kwargs)
+            out_tokens = torch.numel(hf_response)  # sum([len(rt) for rt in zipped_tokens])
+            llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)
+            if out_tokens:
+                # Strip Question and NBSPs(0xa0)
+                zipped_tokens = hf_response.t().tolist()
+                for tokens in zipped_tokens:
+                    token_texts = self.tokenizer.batch_decode(tokens, skip_special_tokens=True)
+                    result = llm_response.add_delta(list(token_texts))
                     yield result
 
+            if verbose:
+                logger.info(
+                    f"Number of output tokens from {self.model_name} = {out_tokens} from {len(hf_response)} sequences"
+                )
             # Last token!
-            result["choices"] = self.format_last_delta()
+            result = llm_response.get_last_delta(num_deltas=len(hf_response))
             yield result
 
         return async_generator()

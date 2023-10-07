@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import glob
 import os
-from typing import Any, AsyncGenerator, Generator, List, Optional
+from typing import Any, AsyncGenerator, Generator, List, Optional, Tuple
 
+from chatllm.llm_response import LLMResponse
 from chatllm.llms.base import BaseLLMProvider, LLMRegister
+from chatllm.prompt import PromptValue
 from llama_cpp import Llama
 
 
@@ -33,19 +35,18 @@ class LlamaCpp(BaseLLMProvider):
             "temperature": 0.8,
             "top_k": 3,
             "top_p": 0.9,
-            "length_penalty": 1,
         }
 
     def get_token_count(self, prompt: str) -> int:
         """Return the number of tokens in the prompt."""
-        formatted_prompt = self.format_prompt(prompt)
-        tokens = self.llm.tokenize(bytes(formatted_prompt, encoding="utf-8"))
-        # print(f"Encoding = {prompt} // {tokens}")
+        tokens = self.llm.tokenize(bytes(prompt, encoding="utf-8"))
         return len(tokens)
 
-    def format_prompt(self, prompt: str) -> str:
-        """Format the prompt for Llama CPP"""
-        return f"Question: {prompt} Answer: " if prompt else ""
+    def format_prompt(self, prompt_value: PromptValue) -> Tuple(str, int):
+        """Format the prompt and return the number of tokens in the prompt."""
+        # formatted_prompt = f"Question: {prompt} Answer: " if prompt else ""
+        formatted_prompt = prompt_value.to_string()
+        return formatted_prompt, self.get_token_count(formatted_prompt)
 
     @staticmethod
     def get_supported_models() -> List[str]:
@@ -58,12 +59,12 @@ class LlamaCpp(BaseLLMProvider):
 
     async def generate(
         self,
-        input_prompt: str,
+        prompt_value: PromptValue,
         *,
         verbose: bool = False,
         **kwargs: Any,
     ) -> List[str]:
-        formatted_prompt = self.format_prompt(input_prompt)
+        formatted_prompt, num_tokens = self.format_prompt(prompt_value)
         result = self.llm(
             formatted_prompt,
             # stop=["Question:"],
@@ -80,16 +81,15 @@ class LlamaCpp(BaseLLMProvider):
 
     async def generate_stream(
         self,
-        input_prompt: str,
+        prompt_value: PromptValue,
         *,
         verbose: bool = False,
         **kwargs: Any,
     ) -> AsyncGenerator[Any]:
         """Pass a single prompt value to the model and stream model generations."""
-        qtemplate = f"Question: {input_prompt} Answer: "
-        num_tokens = self.get_token_count(qtemplate)
+        formatted_prompt, num_tokens = self.format_prompt(prompt_value)
         stream = self.llm(
-            qtemplate,
+            formatted_prompt,
             # stop=["Question:"],
             stream=True,  # Stream the response
             echo=False,  # Dont echo the prompt
@@ -98,14 +98,18 @@ class LlamaCpp(BaseLLMProvider):
 
         # Wrap it in an async_generator!
         async def async_generator() -> Generator[Any]:
-            result = self.get_response_template(num_prompt_tokens=num_tokens, usage=False)
+            llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)
+            num_sequences = -1
             for chunk in stream:
                 generated_options = [c["text"] for c in chunk["choices"]]
-                result["choices"] = self.format_delta(generated_options)
+                if num_sequences < 0:
+                    num_sequences = len(generated_options)
+                result = llm_response.add_delta(generated_options)
                 yield result
 
             # Last token!
-            result["choices"] = self.format_last_delta()
+            result = llm_response.get_last_delta(num_deltas=num_sequences)
+            print(f"Final result = {result}")
             yield result
 
         return async_generator()

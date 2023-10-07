@@ -7,6 +7,7 @@ from typing import Any, AsyncGenerator, List, Optional
 import openai
 import tiktoken
 from chatllm.llms.base import BaseLLMProvider, LLMRegister
+from chatllm.prompt import PromptValue
 
 
 @LLMRegister("openai")
@@ -23,7 +24,6 @@ class OpenAIChat(BaseLLMProvider):
     def get_supported_models() -> List[str]:
         """Return a list of supported models."""
         openai.api_key = os.environ.get("OPENAI_API_KEY")
-        # print(f"API Key = {openai.api_key} // {os.environ.get('OPENAI_API_KEY')}")
         model_list = openai.Model.list()
         model_list = [m["id"] for m in model_list["data"]]
         # print(f"Open AI Model List = {len(model_list)} // {model_list}")
@@ -37,9 +37,9 @@ class OpenAIChat(BaseLLMProvider):
     def get_params(self) -> List[str]:
         """Return Parameters supported by the model"""
         return {
-            "max_tokens": {"min": 0, "max": 4096, "default": 128, "step": 64},
-            "temperature": {"min": 0, "max": 2, "default": 1, "step": 0.1},
-            "top_p": {"min": 0, "max": 1, "default": 1, "step": 0.1},
+            "max_tokens": {"minimum": 0, "maximum": 4096, "default": 128, "step": 64},
+            "temperature": {"minimum": 0, "maximum": 2, "default": 1, "step": 0.1},
+            "top_p": {"minimum": 0, "maximum": 1, "default": 1, "step": 0.1},
         }
 
     def get_token_count(self, prompt: str) -> int:
@@ -48,21 +48,21 @@ class OpenAIChat(BaseLLMProvider):
         # print(f"Encoding = {tokens}")
         return len(tokens)
 
-    def format_prompt(self, prompt: str) -> List[Any]:
+    def format_prompt(self, prompt_value: PromptValue) -> List[dict]:
         """Format the prompt for OpenAI"""
-        return [{"role": "user", "content": prompt}]
+        formatted_prompt = prompt_value.to_messages()
+        return formatted_prompt, self.get_token_count(prompt_value.to_string())
 
     async def generate(
         self,
-        input_prompt: str,
+        prompt_value: PromptValue,
         *,
         verbose: bool = False,
         **kwargs: Any,
     ) -> List[str]:
-        kwargs.setdefault("frequency_penalty", 0.0)
-        kwargs.setdefault("presence_penalty", 0.6)
-
-        openai_prompt = self.format_prompt(input_prompt)
+        # kwargs.setdefault("frequency_penalty", 0.0)
+        # kwargs.setdefault("presence_penalty", 0.6)
+        openai_prompt, num_tokens = self.format_prompt(prompt_value)
         # TODO: Need to support tenacity to retry errors!
         result = await self.client.acreate(
             model=self.model_name,
@@ -74,16 +74,17 @@ class OpenAIChat(BaseLLMProvider):
 
     async def generate_stream(
         self,
-        input_prompt: str,
+        prompt_value: PromptValue,
         *,
         verbose: bool = False,
         **kwargs: Any,
     ) -> AsyncGenerator[Any]:
         """Pass a single prompt value to the model and stream model generations."""
-        kwargs.setdefault("frequency_penalty", 0.0)
-        kwargs.setdefault("presence_penalty", 0.6)
+        # TODO: Handle these parameters in the UI!
+        # kwargs.setdefault("frequency_penalty", 0.0)
+        # kwargs.setdefault("presence_penalty", 0.6)
 
-        openai_prompt = self.format_prompt(input_prompt)
+        openai_prompt, num_tokens = self.format_prompt(prompt_value)
         result = await self.client.acreate(
             model=self.model_name,
             messages=openai_prompt,

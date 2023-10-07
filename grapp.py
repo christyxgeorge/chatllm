@@ -3,8 +3,6 @@ import logging
 from typing import List
 
 import gradio as gr
-
-# Import this after setting the env.
 from chatllm.llm_controller import LLMController
 
 logger = logging.getLogger(__name__)
@@ -17,7 +15,7 @@ SHARED_UI_WARNING = f"""
 
 title = "ChatLLM: A Chatbot for Language Models"
 TITLE_MARKDOWN = f"""
-<h1 style='text-align: center;'>{title}</h1>
+<h1 style='text-align: center; color: #e47232'>{title}</h1>
 """
 
 simple_system_prompt = "You are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe."
@@ -56,8 +54,8 @@ def get_param_values(params, param_name: str, default_value: int | float):
         value = params[param_name].get("default", default_value)
         kwargs = {
             "value": value,
-            "minimum": params[param_name]["min"],
-            "maximum": params[param_name]["max"],
+            "minimum": params[param_name]["minimum"],
+            "maximum": params[param_name]["maximum"],
             "step": params[param_name]["step"],
             "visible": param_name in params.keys(),
         }
@@ -81,7 +79,7 @@ def load_demo(model_name, parameters: List[gr.Slider]):
     logger.info(f"Loaded Demo: state = {state}")
     return (
         state,
-        gr.Dropdown(model_name, visible=True),  # Model Dropdown - Make visible
+        gr.Dropdown(value=model_name, visible=True),  # Model Dropdown - Make visible
         gr.Accordion(open=True, visible=True),  # parameter_row - Open and visible
         gr.Slider(**param_values["max_tokens"]),
         gr.Slider(**param_values["temperature"]),
@@ -95,7 +93,7 @@ def load_demo(model_name, parameters: List[gr.Slider]):
 def model_changed(state: gr.State, model_name: str, parameters: List[gr.Slider]):
     """Handle Model Change"""
     arg_values = {p.elem_id: p.value for p in parameters}
-    param_values = state["params"]
+    param_values = {k: {"value": v} for k, v in state["params"].items()}
     if model_name != state["model"]:
         """Load Model only if the model has changed"""
         try:
@@ -109,7 +107,7 @@ def model_changed(state: gr.State, model_name: str, parameters: List[gr.Slider])
             state["params"] = values
             state["model"] = model_name
         except Exception as e:
-            print(f"Error loading model {model_name}: {e}")
+            logger.warn(f"Error loading model {model_name}: {e}")
             gr.Info(f"Unable to load model {model_name}... Using {state['model']}")
     else:
         logger.info(f"Model {model_name} has not changed")
@@ -150,19 +148,21 @@ async def submit_query(state: gr.State, chat_history, system_prompt: str):
     # Pop out unsupported kwargs
     params = llm_controller.get_model_params(state["model"])
     kwargs = {k: v for k, v in state["params"].items() if k in params}
-    query = chat_history[-1][0]
+    user_query = chat_history[-1][0]
     mode = "stream" if state["stream_mode"] else "batch"
-    logger.info(f"Running {mode} Query: {query} / {kwargs}")
+    logger.info(f"Running {mode} Query: {user_query} / {kwargs}")
     if state["stream_mode"]:
-        stream = llm_controller.run_stream(query, system_prompt=system_prompt, **kwargs)
+        stream = llm_controller.run_stream(
+            user_query, system_prompt=system_prompt, chat_history=chat_history, **kwargs
+        )
         async for response_text in stream:
             chat_history[-1][1] = response_text
             yield chat_history, gr.Button(visible=False), gr.Button(visible=True)
         # Last yield to restore the submit button
         yield chat_history, gr.Button(visible=True), gr.Button(visible=False)
     else:
-        response_text = await llm_controller.run_query(
-            query, system_prompt=system_prompt, **kwargs
+        response_text = await llm_controller.run_batch(
+            user_query, system_prompt=system_prompt, chat_history=chat_history, **kwargs
         )
         chat_history[-1][1] = response_text
         yield chat_history, gr.Button(visible=True), gr.Button(visible=False)
@@ -266,6 +266,8 @@ def setup_gradio(verbose=False):
                 chatbot = gr.Chatbot(
                     avatar_images=("./images/user.png", "./images/bot.png"),
                     bubble_full_width=False,
+                    render_markdown=True,
+                    line_breaks=True,
                     # layout="panel",  # or 'bubble' # [Deprecated]
                 )
                 with gr.Row(visible=True) as submit_row:
