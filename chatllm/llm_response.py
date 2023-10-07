@@ -96,11 +96,11 @@ class LLMResponse(BaseModel):
 
     def set_token_count(self, prompt_count, completion_count) -> None:
         if self.prompt_tokens > 0 and self.prompt_tokens != prompt_count:
-            logger.info(
+            logger.warn(
                 f"Prompt Token Count {prompt_count} is different from the computed value: {self.prompt_tokens}"
             )
         if self.completion_tokens > 0 and self.completion_tokens != completion_count:
-            logger.info(
+            logger.warn(
                 f"Completion Token Count {completion_count} is different from the computed value: {self.completion_tokens}"
             )
         self.prompt_tokens = prompt_count

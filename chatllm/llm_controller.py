@@ -88,6 +88,7 @@ class LLMController:
                     response_text += text
                     if first_token_time is None:
                         first_token_time = time.time()
+                    print(f"Delta = {response_delta}")
                     yield response_text
             elapsed_time = time.time() - start_time
             token_gen_time = time.time() - first_token_time
