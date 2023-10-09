@@ -3,13 +3,12 @@ from __future__ import annotations
 
 import os
 from typing import Any, AsyncGenerator, List, Tuple
-from urllib import response
 
 import replicate
 import requests
 from chatllm.llm_response import LLMResponse
 from chatllm.llms.base import BaseLLMProvider, LLMRegister
-from chatllm.prompt import PromptValue
+from chatllm.prompts import PromptValue
 
 
 @LLMRegister("replicate")
@@ -66,39 +65,6 @@ class ReplicateApi(BaseLLMProvider):
         formatted_prompt = prompt_value.to_string()
         return formatted_prompt, self.get_token_count(formatted_prompt)
 
-    async def generate(
-        self,
-        prompt_value: PromptValue,
-        *,
-        verbose: bool = False,
-        **kwargs: Any,
-    ) -> List[str]:
-        formatted_prompt, num_tokens = self.format_prompt(prompt_value)
-        input_args = {
-            "prompt": formatted_prompt,
-            # "stop_sequences": stop,
-            "debug": verbose,
-            "stream": True,
-            "xxxx": 1,  ## Just to check the OpenAPI validaton
-            **kwargs,
-        }
-
-        # TODO: Validation of the args is not being done!
-        print(f"Replicate prediction using {self.model_name}; Args = {input_args}")
-        iterator = self.llm.predict(**input_args)  # Iterator over the tokens
-
-        out_tokens = 0
-        response_text = ""
-        for chunk in iterator:
-            out_tokens += 1
-            response_text += chunk
-
-        llm_response = LLMResponse(
-            model=self.model, prompt_tokens=num_tokens, completion_tokens=out_tokens
-        )
-        result = llm_response.get_result(response_text)
-        return result
-
     def validate_kwargs(self, **kwargs):
         """Validate the kwargs passed to the model"""
         validated_kwargs = {}
@@ -110,6 +76,39 @@ class ReplicateApi(BaseLLMProvider):
                 validated_kwargs[k] = v
         return validated_kwargs
 
+    async def generate(
+        self,
+        prompt_value: PromptValue,
+        *,
+        verbose: bool = False,
+        **kwargs: Any,
+    ) -> LLMResponse:
+        formatted_prompt, num_tokens = self.format_prompt(prompt_value)
+        llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)
+        kwargs = self.validate_kwargs(**kwargs)
+        input_args = {
+            "prompt": formatted_prompt,
+            # "stop_sequences": stop,
+            "debug": verbose,
+            "stream": True,
+            "xxxx": 1,  ## Just to check the OpenAPI validaton
+            **kwargs,
+        }
+
+        # TODO: MOve this also to the predictions.create mechanism
+        print(f"Replicate prediction using {self.model_name}; Args = {input_args}")
+        iterator = self.llm.predict(**input_args)  # Iterator over the tokens
+
+        out_tokens = 0
+        response_text = ""
+        for chunk in iterator:
+            out_tokens += 1
+            response_text += chunk
+
+        llm_response.set_response(response_text, "stop")
+        llm_response.set_token_count(num_tokens, out_tokens)
+        return llm_response
+
     async def generate_stream(
         self,
         prompt_value: PromptValue,
@@ -119,6 +118,8 @@ class ReplicateApi(BaseLLMProvider):
     ) -> AsyncGenerator[Any]:
         """Pass a single prompt value to the model and stream model generations."""
         formatted_prompt, num_tokens = self.format_prompt(prompt_value)
+        llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)
+        kwargs = self.validate_kwargs(**kwargs)
         input_args = {
             "prompt": formatted_prompt,
             # "stop_sequences": stop,
@@ -128,33 +129,41 @@ class ReplicateApi(BaseLLMProvider):
             **kwargs,
         }
 
+        prediction = replicate.predictions.create(version=self.llm, input=input_args)
+
         # TODO: Validation of the args is not being done!
         print(f"Replicate prediction using {self.model_name}; Args = {input_args}")
 
         # Wrap it in an async_generator!
         async def async_generator():
-            llm_response = LLMResponse(model=self.model, prompt_tokens=0)
-            prediction = replicate.predictions.create(version=self.llm, input=input_args)
             iterator = prediction.output_iterator()
             for text_chunk in iterator:
-                result = llm_response.add_delta(text_chunk)
-                yield result
+                llm_response.add_delta(text_chunk)
+                yield llm_response
 
             # Last token!
-            try:
-                prediction_logs = {
-                    k[0]: k[1]
-                    for k in (x.split(":") for x in prediction.logs.split("\n") if ":" in x)
-                }
-                print(f"Prediction Logs = {prediction.logs} // {prediction_logs}")
-                prompt_tokens = int(prediction_logs.get("Number of tokens in prompt", 0))
-                completion_tokens = int(prediction_logs.get("Number of tokens generated", 0))
-                llm_response.set_token_count(prompt_tokens, completion_tokens)
-            except Exception as e:
-                print(f"Exception while parsing prediction logs: {e}")
-            result = llm_response.get_last_delta()
-            result["metrics"] = prediction.metrics
-            print(f"Result = {result}")
-            yield result
+            self.get_prediction_info(prediction, llm_response)
+            llm_response.add_last_delta()
+            yield llm_response
 
         return async_generator()
+
+    def get_prediction_info(self, prediction, llm_response: LLMResponse):
+        """Return the info for the generation"""
+        try:
+            prediction_logs = {
+                k[0]: k[1] for k in (x.split(":") for x in prediction.logs.split("\n") if ":" in x)
+            }
+            logger.info(f"Prediction Logs = {prediction.logs} // {prediction_logs}")
+            prompt_tokens = int(prediction_logs.get("Number of tokens in prompt", 0))
+            completion_tokens = int(prediction_logs.get("Number of tokens generated", 0))
+            usage = {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            }
+            llm_response.set_api_usage(usage)
+            llm_response.set_extra_info(metrics=prediction.metrics)
+
+        except Exception as e:
+            logger.warn(f"Exception while parsing prediction logs: {e}")

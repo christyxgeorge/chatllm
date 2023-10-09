@@ -2,12 +2,11 @@
 from __future__ import annotations
 
 import logging
-import random
 from abc import ABC, abstractmethod
-from datetime import datetime
-from typing import Any, AsyncGenerator, List, Optional, Type
+from typing import Any, AsyncGenerator, List, Type
 
-from chatllm.prompt import PromptValue
+from chatllm.llm_response import LLMResponse
+from chatllm.prompts import PromptValue
 
 logger = logging.getLogger(__name__)
 
@@ -62,17 +61,13 @@ class BaseLLMProvider(ABC):
         """Return Parameters supported by the model"""
 
     @abstractmethod
-    def get_token_count(self, prompt: str) -> int:
-        """Return the number of tokens in the prompt."""
-
-    @abstractmethod
     async def generate(
         self,
         prompt_value: PromptValue,
         *,
         verbose: bool = False,
         **kwargs: Any,
-    ) -> str:
+    ) -> LLMResponse:
         """Pass a single prompt value to the model and return model generations."""
 
     async def generate_stream(
@@ -93,7 +88,7 @@ class BaseLLMProvider(ABC):
     ) -> List[str]:
         """Pass a sequence of prompt values to the model and return model generations."""
         responses = []
-        for prompt_value in prompt_value:
+        for prompt_value in prompt_values:
             response = await self.generate(prompt_value, verbose=verbose, **kwargs)
             responses.append(response["choices"][0]["text"])
 

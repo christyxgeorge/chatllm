@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, AsyncGenerator, Generator, List, Tuple
+from typing import Any, AsyncGenerator, Generator, List
 
 import torch
 from chatllm.llm_response import LLMResponse
 from chatllm.llms.base import BaseLLMProvider, LLMRegister
-from chatllm.prompt import PromptValue
+from chatllm.prompts import PromptValue
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 logger = logging.getLogger(__name__)
@@ -24,6 +24,8 @@ class HFPipeline(BaseLLMProvider):
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         logger.info(f"Tokenizer initialized {self.tokenizer}")
+
+        self.num_sequences = 4 if self.model_name in ["roneneldan/TinyStories-33M"] else 1
 
     async def load(self, **kwargs: Any) -> None:
         """
@@ -56,7 +58,9 @@ class HFPipeline(BaseLLMProvider):
     def format_prompt(self, prompt_value: PromptValue) -> str:
         """Format the prompt and return the number of tokens in the prompt."""
         # formatted_prompt = f"Question: {prompt} Answer: " if prompt else ""
-        formatted_prompt = prompt_value.to_string()
+        if self.model_name in ["roneneldan/TinyStories-33M"]:
+            formatted_prompt = prompt_value.to_string(format="user_last")
+        formatted_prompt = prompt_value.to_string(format="chatml")
         return formatted_prompt  # , self.get_token_count(formatted_prompt)
 
     @staticmethod
@@ -76,11 +80,11 @@ class HFPipeline(BaseLLMProvider):
         kwargs["pad_token_id"] = self.tokenizer.pad_token_id
 
         # To check multiple sequences
-        if self.model_name in ["roneneldan/TinyStories-33M"]:
-            logger.info(f"Setting num_beams=4 and num_return_sequences=4")
-            kwargs["num_beams"] = 4
-            kwargs["num_return_sequences"] = 4
-        print(f"Validated kwargs = {kwargs}")
+        if self.num_sequences > 1:
+            logger.info(f"Setting num_beams / num_return_sequences = {self.num_sequences}")
+            kwargs["num_beams"] = self.num_sequences
+            kwargs["num_return_sequences"] = self.num_sequences
+        logger.info(f"Validated kwargs = {kwargs}")
         return kwargs
 
     async def generate(
@@ -89,34 +93,24 @@ class HFPipeline(BaseLLMProvider):
         *,
         verbose: bool = False,
         **kwargs: Any,
-    ) -> List[str]:
+    ) -> LLMResponse:
+        llm_response = LLMResponse(model=self.model, num_sequences=self.num_sequences)
         formatted_prompt = self.format_prompt(prompt_value)
         input_tokens = self.tokenizer.encode(formatted_prompt, return_tensors="pt")
         num_tokens = torch.numel(input_tokens)
-        if verbose:
-            logger.info(
-                f"Prompt [{len(formatted_prompt)} chars, {num_tokens} tkns] = {formatted_prompt}"
-            )
 
         kwargs = self.validate_kwargs(**kwargs)
 
         hf_response = self.llm.generate(input_tokens, **kwargs)
         out_tokens = torch.numel(hf_response)  # sum([len(rt) for rt in zipped_tokens])
-        llm_response = LLMResponse(
-            model=self.model, prompt_tokens=num_tokens, completion_tokens=out_tokens
-        )
+        llm_response.set_token_count(prompt_count=input_tokens, completion_count=out_tokens)
         if out_tokens:
-            ## Strip Question and NBSPs(0xa0)
             response_texts = [
                 "".join(self.tokenizer.batch_decode(seq, skip_special_tokens=True))
                 for seq in hf_response
             ]
-            result = llm_response.get_result(response_texts)
-        if verbose:
-            logger.info(
-                f"Number of output tokens from {self.model_name} = {out_tokens} from {len(hf_response)} sequences"
-            )
-        return result
+            llm_response.set_response(response_texts, finish_reason="stop")
+        return llm_response
 
     async def generate_stream(
         self,
@@ -134,10 +128,6 @@ class HFPipeline(BaseLLMProvider):
         formatted_prompt = self.format_prompt(prompt_value)
         input_tokens = self.tokenizer.encode(formatted_prompt, return_tensors="pt")
         num_tokens = torch.numel(input_tokens)
-        if verbose:
-            logger.info(
-                f"Prompt [{len(formatted_prompt)} chars, {num_tokens} tkns] = {formatted_prompt}"
-            )
 
         kwargs = self.validate_kwargs(**kwargs)
 
@@ -150,15 +140,11 @@ class HFPipeline(BaseLLMProvider):
                 zipped_tokens = hf_response.t().tolist()
                 for tokens in zipped_tokens:
                     token_texts = self.tokenizer.batch_decode(tokens, skip_special_tokens=True)
-                    result = llm_response.add_delta(list(token_texts))
-                    yield result
+                    llm_response.add_delta(list(token_texts))
+                    yield llm_response
 
-            if verbose:
-                logger.info(
-                    f"Number of output tokens from {self.model_name} = {out_tokens} from {len(hf_response)} sequences"
-                )
             # Last token!
-            result = llm_response.get_last_delta(num_deltas=len(hf_response))
+            llm_response.add_last_delta()
             yield result
 
         return async_generator()

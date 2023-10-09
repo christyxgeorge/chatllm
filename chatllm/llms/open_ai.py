@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import os
-from typing import Any, AsyncGenerator, List, Optional
+from typing import Any, AsyncGenerator, List
 
 import openai
 import tiktoken
+from chatllm.llm_response import LLMResponse
 from chatllm.llms.base import BaseLLMProvider, LLMRegister
-from chatllm.prompt import PromptValue
+from chatllm.prompts import PromptValue
 
 
 @LLMRegister("openai")
@@ -53,24 +54,34 @@ class OpenAIChat(BaseLLMProvider):
         formatted_prompt = prompt_value.to_messages()
         return formatted_prompt, self.get_token_count(prompt_value.to_string())
 
+    def validate_kwargs(self, **kwargs):
+        """Validate the kwargs for the model"""
+        # TODO: Handle these parameters in the UI!
+        # kwargs.setdefault("frequency_penalty", 0.0)
+        # kwargs.setdefault("presence_penalty", 0.6)
+        return kwargs
+
     async def generate(
         self,
         prompt_value: PromptValue,
         *,
         verbose: bool = False,
         **kwargs: Any,
-    ) -> List[str]:
-        # kwargs.setdefault("frequency_penalty", 0.0)
-        # kwargs.setdefault("presence_penalty", 0.6)
+    ) -> LLMResponse:
         openai_prompt, num_tokens = self.format_prompt(prompt_value)
+        llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)
+
+        kwargs = self.validate_kwargs(**kwargs)
+
         # TODO: Need to support tenacity to retry errors!
-        result = await self.client.acreate(
+        response = await self.client.acreate(
             model=self.model_name,
             messages=openai_prompt,
             stream=False,
             **kwargs,
         )
-        return result
+        llm_response.set_openai_response(response)
+        return llm_response
 
     async def generate_stream(
         self,
@@ -80,15 +91,21 @@ class OpenAIChat(BaseLLMProvider):
         **kwargs: Any,
     ) -> AsyncGenerator[Any]:
         """Pass a single prompt value to the model and stream model generations."""
-        # TODO: Handle these parameters in the UI!
-        # kwargs.setdefault("frequency_penalty", 0.0)
-        # kwargs.setdefault("presence_penalty", 0.6)
-
         openai_prompt, num_tokens = self.format_prompt(prompt_value)
-        result = await self.client.acreate(
+        llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)
+
+        kwargs = self.validate_kwargs(**kwargs)
+
+        stream = await self.client.acreate(
             model=self.model_name,
             messages=openai_prompt,
             stream=True,
             **kwargs,
         )
-        return result
+
+        async def async_generator() -> Generator[Any]:
+            async for response_delta in stream:
+                llm_response.add_openai_delta(response_delta)
+                yield llm_response
+
+        return async_generator()

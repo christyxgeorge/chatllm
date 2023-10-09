@@ -1,16 +1,19 @@
 """The LLM Response class. (modeled from the OpenAI response)"""
 
+import json
 import logging
 import random
+import uuid
 from datetime import datetime
 from typing import Any, Dict, List
 
 from pydantic import BaseModel, model_validator
 
 # TODO: ID, is it per response or once at the constructor
-# TODO: result_object -> do it more intelligently... based on the model provider!
 
 logger = logging.getLogger(__name__)
+
+# ResponseType = str | List[str]  # | List[Dict[str, Any]]
 
 
 class LLMResponse(BaseModel):
@@ -20,11 +23,10 @@ class LLMResponse(BaseModel):
     """The name of the model."""
 
     unique_id: str
-    result_object: str = "cllm.generation"
     """The unique id of the response."""
 
-    usage: bool = True
-    """Whether to include usage information."""
+    num_sequences: int = 1
+    """The number of sequences generated."""
 
     prompt_tokens: int = 0
     completion_tokens: int = 0
@@ -34,65 +36,98 @@ class LLMResponse(BaseModel):
     be the sum of all the  sequences.
     """
 
+    api_usage: Dict[str, Any] = {}
+    """
+    Usage as returned by the API
+    """
+
+    finish_reason: str = None
+    """
+    The completion reason for the response.
+    One of 'stop', 'length', 'function' or 'error'
+    Note: In OpenAI Api, the finish_reason is for each sequence. Here, we are keeping
+    across all the sequences.
+    """
+
+    start_time: datetime = datetime.now()
+    first_token_time: datetime = None
+    end_time: datetime = None
+    """
+    Start, End times for the generation process. Also, capture the timestamp for the 
+    first token creation
+    """
+
+    created_ts: int = 0
+    """The creation timestamp of the response."""
+
+    extra_info: Dict[str, Any] = {}
+    """Any extra info returned from the API (like metrics)"""
+
+    response_sequences: List[str] = []
+
     @model_validator(mode="before")
     def set_default_values(cls, values: Dict[str, Any]) -> Dict[str, Any]:
-        values["unique_id"] = f"cllm-{random.randint(10000000,99999999):08d}"
+        values["unique_id"] = f"cllm-{uuid.uuid4()}"
+        values["created_ts"] = int(datetime.timestamp(datetime.now()))
+        # Initialize the sequences!
+        values["response_sequences"] = [""] * values.get("num_sequences", 1)
         return values
 
-    def get_result(self, sequences: str | List[str]):
-        seq_list = sequences if isinstance(sequences, list) else [sequences]
-        choices = [
-            {"message": {"role": "assistant", "content": seq}, "finish_reason": None, "index": i}
-            for i, seq in enumerate(seq_list)
-        ]
-        return {
-            "id": self.unique_id,
-            "object": self.result_object,
-            "created": int(datetime.timestamp(datetime.now())),
-            "model": self.model,
-            "choices": choices,
-            "usage": {
-                "prompt_tokens": self.prompt_tokens,
-                "completion_tokens": self.completion_tokens,
-                "total_tokens": self.prompt_tokens + self.completion_tokens,
-            },
-        }
+    def set_response(self, message: str | List[str], finish_reason: str = "stop"):
+        """Set the LLM response message, when the response is not streamed (all at once))"""
 
-    def add_delta(self, delta: str | List[str]):
-        """Add a delta to the response"""
+        self.response_sequences = message if isinstance(message, list) else [message]
+        assert self.num_sequences == len(self.response_sequences)  # nosec
+        self.finish_reason = finish_reason
+        self.end_time = datetime.now()
+
+    def set_openai_response(self, response: dict | List[dict]):
+        """Set the LLM response message, when the response is not streamed (all at once))"""
+        choices = response.get("choices", [])
+        response_texts = [res["message"]["content"] for res in choices]
+        finish_reasons = [res["finish_reason"] for res in choices]
+        finish_reason = finish_reasons[0] if finish_reasons else None
+        self.set_response(response_texts, finish_reason)
+        self.set_api_usage(response["usage"])
+
+    def add_openai_delta(self, delta: dict | List[dict]) -> None:
+        """Add a LLM token to the response, when the response is streamed (OpenAI response format)"""
+        choices = delta.get("choices", [])
+        finish_reason = None
+        if choices:
+            has_content = all(["content" in res["delta"] for res in choices])
+            if has_content:
+                response_texts = [res["delta"].get("content", None) for res in choices]
+                self.add_delta(response_texts)
+
+        if not has_content:  # Last token!
+            finish_reasons = [res["finish_reason"] for res in choices]
+            finish_reason = "|".join(set(finish_reasons))
+            self.add_last_delta(finish_reason=finish_reason)
+            self.set_api_usage(delta.get("usage", {}))
+
+    def add_delta(self, delta: str | List[str]) -> None:
+        """Add a LLM token to the response, when the response is streamed"""
 
         delta_list = delta if isinstance(delta, list) else [delta]
-        choices = [
-            {"delta": {"role": "assistant", "content": d}, "finish_reason": None, "index": i}
-            for i, d in enumerate(delta_list)
-        ]
-        self.completion_tokens += len(delta)  # One token per completion!
-        return {
-            "id": self.unique_id,
-            "object": self.result_object,
-            "created": int(datetime.timestamp(datetime.now())),
-            "model": self.model,
-            "choices": choices,
-        }
+        assert self.num_sequences == len(delta_list)  # nosec
 
-    def get_last_delta(self, num_deltas=1):
-        """We may be generating multiple number of responses for a single prompt"""
-        choices = [
-            {"delta": {"role": "assistant", "content": ""}, "finish_reason": "stop", "index": i}
-            for i in range(num_deltas)
-        ]
-        return {
-            "id": self.unique_id,
-            "object": self.result_object,
-            "created": int(datetime.timestamp(datetime.now())),
-            "model": self.model,
-            "choices": choices,
-            "usage": {
-                "prompt_tokens": self.prompt_tokens,
-                "completion_tokens": self.completion_tokens,
-                "total_tokens": self.prompt_tokens + self.completion_tokens,
-            },
-        }
+        if not self.first_token_time:
+            self.first_token_time = datetime.now()
+
+        for i, seq in enumerate(delta_list):
+            self.response_sequences[i] += seq
+
+        self.completion_tokens += len(delta)  # One token per completion!
+
+    def add_last_delta(self, finish_reason="stop"):
+        """
+        Add the last token, when the response is streamed.
+        This is to ensure that the finish_reason is propagated back!
+        """
+        self.end_time = datetime.now()
+        if finish_reason:
+            self.finish_reason = finish_reason
 
     def set_token_count(self, prompt_count, completion_count) -> None:
         if self.prompt_tokens > 0 and self.prompt_tokens != prompt_count:
@@ -105,3 +140,50 @@ class LLMResponse(BaseModel):
             )
         self.prompt_tokens = prompt_count
         self.completion_tokens = completion_count
+
+    def set_api_usage(self, usage: Dict[str, Any]):
+        self.api_usage = usage
+        # In case, we have not computed completion tokens, we use the api_usage!
+        if self.completion_tokens == 0:
+            self.completion_tokens = usage.get("completion_tokens", 0)
+
+    def set_extra_info(self, **kwargs):
+        self.extra_info.update(kwargs)
+
+    def get_first_sequence(self):
+        """Return the first sequence"""
+        return self.response_sequences[0] if self.response_sequences else ""
+
+    def print_summary(self):
+        elapsed_time = (self.end_time - self.start_time).total_seconds()
+        response_text = self.get_first_sequence()
+        usage = {
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+            "total_tokens": self.prompt_tokens + self.completion_tokens,
+        }
+        print(f"Response: {response_text}")
+        print(f"    Model: {self.model}")
+        print(f"    Computed Usage = {json.dumps(usage or {})}")
+        if self.api_usage:
+            print(f"    API Usage = {json.dumps(self.api_usage)}")
+        print(f"    Stop Reason = {self.finish_reason or 'n/a'}")
+        if "metrics" in self.extra_info:
+            print(f"    Metrics = {json.dumps(self.extra_info['metrics'])}")
+        if self.first_token_time:
+            token_gen_time = (self.end_time - self.first_token_time).total_seconds()
+            token_gen_str = f"Time between first token and last token: {token_gen_time:.03f} secs"
+        else:
+            token_gen_str = ""
+        if elapsed_time > 60:
+            elapsed_secs = elapsed_time % 60
+            elapsed_sec_str = f"{int(elapsed_time//60)} mins, {elapsed_secs:.03f} secs)"
+        else:
+            elapsed_sec_str = f"{elapsed_time:.03f} secs"
+        tokens_per_sec = (
+            f"{(usage['completion_tokens'] / elapsed_time):.02f} Tokens/Sec"
+            if usage
+            else "Not Available"
+        )
+        print(f"Elapsed time = {elapsed_sec_str} secs, {tokens_per_sec}. {token_gen_str}")
+        print("=" * 130)

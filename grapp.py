@@ -4,6 +4,7 @@ from typing import List
 
 import gradio as gr
 from chatllm.llm_controller import LLMController
+from chatllm.prompts import ChatMessage, ChatPromptValue, PromptValue, StringPromptValue
 
 logger = logging.getLogger(__name__)
 
@@ -83,10 +84,20 @@ def load_demo(model_name, parameters: List[gr.Slider]):
         gr.Accordion(open=True, visible=True),  # parameter_row - Open and visible
         gr.Slider(**param_values["max_tokens"]),
         gr.Slider(**param_values["temperature"]),
-        gr.Slider(**param_values["top_k"]),
         gr.Slider(**param_values["top_p"]),
+        gr.Slider(**param_values["top_k"]),
         gr.Slider(**param_values["length_penalty"]),
+        gr.Slider(**param_values["repeat_penalty"]),
     )
+
+
+def close_parameters() -> gr.Accordion:
+    """
+    Close the parameters view when the model changes.
+    Note: we are making visible false so that the progress information is not seen
+    on the accordion
+    """
+    return gr.Accordion(open=False, visible=False)
 
 
 # Event Handlers Implemented
@@ -111,14 +122,18 @@ def model_changed(state: gr.State, model_name: str, parameters: List[gr.Slider])
             gr.Info(f"Unable to load model {model_name}... Using {state['model']}")
     else:
         logger.info(f"Model {model_name} has not changed")
+    chat_history = []
     return (
         state,
         state["model"],
+        chat_history,
+        gr.Accordion(open=True, visible=True),  # parameter_row - Open and visible
         gr.Slider(**param_values["max_tokens"]),
         gr.Slider(**param_values["temperature"]),
-        gr.Slider(**param_values["top_k"]),
         gr.Slider(**param_values["top_p"]),
+        gr.Slider(**param_values["top_k"]),
         gr.Slider(**param_values["length_penalty"]),
+        gr.Slider(**param_values["repeat_penalty"]),
     )
 
 
@@ -139,9 +154,36 @@ def vote(data: gr.LikeData):
     # gr.Info(f"You {action} this response: [{data.value}]")
 
 
+def _create_prompt_value(user_query, system_prompt, chat_history) -> PromptValue:
+    """Create a PromptValue object"""
+    if system_prompt or len(chat_history) > 1:
+        prompt_value = ChatPromptValue()
+        if system_prompt:
+            prompt_value.add_message(ChatMessage(role="system", content=system_prompt))
+        for user_msg, ai_msg in chat_history:
+            if user_msg:
+                prompt_value.add_message(ChatMessage(role="user", content=user_msg))
+            if ai_msg:
+                prompt_value.add_message(ChatMessage(role="assistant", content=ai_msg))
+        # User Query is included in the chat history.. No need to add it...
+        # prompt_value.add_message(ChatMessage(role="user", content=user_query))
+    else:
+        prompt_value = StringPromptValue(text=user_query)
+    return prompt_value
+
+
 def add_user_message(user_prompt: str, chat_history):
     chat_message = (user_prompt, None)
     return ("", chat_history + [chat_message], gr.Button(visible=False), gr.Button(visible=True))
+
+
+def _handle_response(response_type, response_text, chat_history):
+    if response_type == "error":
+        raise gr.Error(f"{response_type.upper()}: {response_text}")
+    elif response_type == "warning":
+        gr.Warning(f"{response_type.upper()}: {response_text}")
+    else:  # Add it to the chat_history
+        chat_history[-1][1] = response_text
 
 
 async def submit_query(state: gr.State, chat_history, system_prompt: str):
@@ -149,23 +191,25 @@ async def submit_query(state: gr.State, chat_history, system_prompt: str):
     params = llm_controller.get_model_params(state["model"])
     kwargs = {k: v for k, v in state["params"].items() if k in params}
     user_query = chat_history[-1][0]
-    mode = "stream" if state["stream_mode"] else "batch"
-    logger.info(f"Running {mode} Query: {user_query} / {kwargs}")
+    prompt_value = _create_prompt_value(user_query, system_prompt, chat_history)
     if state["stream_mode"]:
-        stream = llm_controller.run_stream(
-            user_query, system_prompt=system_prompt, chat_history=chat_history, **kwargs
-        )
-        async for response_text in stream:
-            chat_history[-1][1] = response_text
+        stream = llm_controller.run_stream(prompt_value=prompt_value, **kwargs)
+        async for response_type, response_text in stream:
+            _handle_response(response_type, response_text, chat_history)
             yield chat_history, gr.Button(visible=False), gr.Button(visible=True)
         # Last yield to restore the submit button
         yield chat_history, gr.Button(visible=True), gr.Button(visible=False)
     else:
-        response_text = await llm_controller.run_batch(
-            user_query, system_prompt=system_prompt, chat_history=chat_history, **kwargs
+        response_type, response_text = await llm_controller.run_batch(
+            prompt_value=prompt_value, **kwargs
         )
-        chat_history[-1][1] = response_text
+        _handle_response(response_type, response_text, chat_history)
         yield chat_history, gr.Button(visible=True), gr.Button(visible=False)
+
+
+def stop_btn_clicked():
+    # TODO: Need to check if we can/need to actually stop the query
+    return gr.Button(visible=True), gr.Button(visible=False)
 
 
 # ===========================================================================================
@@ -233,15 +277,6 @@ def setup_gradio(verbose=False):
                         info="Higher values produce more diverse outputs",
                         elem_id="temperature",
                     )
-                    top_k = gr.Slider(
-                        minimum=1,
-                        maximum=5,
-                        value=3,
-                        step=1,
-                        interactive=True,
-                        label="Top k",
-                        elem_id="top_k",
-                    )
                     top_p = gr.Slider(
                         minimum=0,
                         maximum=1,
@@ -249,8 +284,18 @@ def setup_gradio(verbose=False):
                         step=0.1,
                         interactive=True,
                         label="Top p",
-                        info="Alternative to temperature sampling, called nucleus sampling",
+                        info="Alternative to temperature sampling, nucleus sampling",
                         elem_id="top_p",
+                    )
+                    top_k = gr.Slider(
+                        minimum=1,
+                        maximum=5,
+                        value=3,
+                        step=1,
+                        interactive=True,
+                        label="Top k",
+                        info="Sample from the k most likely next tokens",
+                        elem_id="top_k",
                     )
                     length_penalty = gr.Slider(
                         minimum=1,
@@ -258,8 +303,17 @@ def setup_gradio(verbose=False):
                         value=3,
                         step=0.1,
                         interactive=True,
-                        label="length_penalty",
+                        label="Length Penalty",
                         elem_id="length_penalty",
+                    )
+                    repeat_penalty = gr.Slider(
+                        minimum=1,
+                        maximum=2,
+                        value=1.1,
+                        step=0.1,
+                        interactive=True,
+                        label="Repeat Penalty",
+                        elem_id="repeat_penalty",
                     )
 
             with gr.Column(scale=8):
@@ -268,6 +322,8 @@ def setup_gradio(verbose=False):
                     bubble_full_width=False,
                     render_markdown=True,
                     line_breaks=True,
+                    show_copy_button=True,
+                    show_label=False
                     # layout="panel",  # or 'bubble' # [Deprecated]
                 )
                 with gr.Row(visible=True) as submit_row:
@@ -289,22 +345,27 @@ def setup_gradio(verbose=False):
                         interactive=True,
                     )
 
-        gr.Examples(examples=examples, inputs=user_prompt)
+        gr.Examples(examples=examples, examples_per_page=20, inputs=user_prompt)
 
-        parameters = [
-            max_tokens,
-            temperature,
-            top_k,
-            top_p,
-            length_penalty,
-        ]
+        parameters = [max_tokens, temperature, top_p, top_k, length_penalty, repeat_penalty]
 
         # Event Handlers
         model_dropdown.change(
+            close_parameters,
+            inputs=[],
+            outputs=[parameter_row],
+        ).then(
             lambda x, y, *params: model_changed(x, y, parameters),
             inputs=[state, model_dropdown, *parameters],
-            outputs=[state, model_dropdown, *parameters],
+            outputs=[state, model_dropdown, chatbot, parameter_row, *parameters],
         )
+        stream_mode.change(
+            mode_changed,
+            inputs=[state, stream_mode],
+            outputs=[state],
+        )
+
+        # Parameter Event handlers. Need to separately done!
         max_tokens.change(
             fn=lambda state, y: parameter_changed(state, max_tokens, y),
             inputs=[state, max_tokens],
@@ -315,19 +376,24 @@ def setup_gradio(verbose=False):
             inputs=[state, temperature],
             outputs=[state],
         )
-        top_k.change(
-            fn=lambda state, y: parameter_changed(state, top_k, y),
-            inputs=[state, top_k],
-            outputs=[state],
-        )
         top_p.change(
             fn=lambda state, y: parameter_changed(state, top_p, y),
             inputs=[state, top_p],
             outputs=[state],
         )
+        top_k.change(
+            fn=lambda state, y: parameter_changed(state, top_k, y),
+            inputs=[state, top_k],
+            outputs=[state],
+        )
         length_penalty.change(
             fn=lambda state, y: parameter_changed(state, length_penalty, y),
             inputs=[state, length_penalty],
+            outputs=[state],
+        )
+        repeat_penalty.change(
+            fn=lambda state, y: parameter_changed(state, repeat_penalty, y),
+            inputs=[state, repeat_penalty],
             outputs=[state],
         )
 
@@ -352,11 +418,7 @@ def setup_gradio(verbose=False):
             inputs=[state, chatbot, system_prompt],
             outputs=[chatbot, submit_btn, stop_btn],
         )
-        stream_mode.change(
-            mode_changed,
-            inputs=[state, stream_mode],
-            outputs=[state],
-        )
+        stop_btn.click(stop_btn_clicked, [], outputs=[submit_btn, stop_btn])
 
         demo.load(
             lambda x, *params: load_demo(x, parameters),
