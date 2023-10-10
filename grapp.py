@@ -1,10 +1,16 @@
 """Setup the Gradio App"""
 import logging
-from typing import List
+from typing import List, Optional
 
 import gradio as gr
 from chatllm.llm_controller import LLMController
-from chatllm.prompts import ChatMessage, ChatPromptValue, PromptValue, StringPromptValue
+from chatllm.prompts import (
+    ChatMessage,
+    ChatPromptValue,
+    ChatRole,
+    PromptValue,
+    StringPromptValue,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -118,15 +124,14 @@ def model_changed(state: gr.State, model_name: str, parameters: List[gr.Slider])
             state["params"] = values
             state["model"] = model_name
         except Exception as e:
-            logger.warn(f"Error loading model {model_name}: {e}")
+            logger.warning(f"Error loading model {model_name}: {e}")
             gr.Info(f"Unable to load model {model_name}... Using {state['model']}")
     else:
         logger.info(f"Model {model_name} has not changed")
-    chat_history = []
     return (
         state,
         state["model"],
-        chat_history,
+        [],  # chatbot - Clear the chat history
         gr.Accordion(open=True, visible=True),  # parameter_row - Open and visible
         gr.Slider(**param_values["max_tokens"]),
         gr.Slider(**param_values["temperature"]),
@@ -156,6 +161,7 @@ def vote(data: gr.LikeData):
 
 def _create_prompt_value(user_query, system_prompt, chat_history) -> PromptValue:
     """Create a PromptValue object"""
+    prompt_value: Optional[PromptValue] = None
     if system_prompt or len(chat_history) > 1:
         prompt_value = ChatPromptValue()
         if system_prompt:
@@ -165,8 +171,9 @@ def _create_prompt_value(user_query, system_prompt, chat_history) -> PromptValue
                 prompt_value.add_message(ChatMessage(role="user", content=user_msg))
             if ai_msg:
                 prompt_value.add_message(ChatMessage(role="assistant", content=ai_msg))
-        # User Query is included in the chat history.. No need to add it...
-        # prompt_value.add_message(ChatMessage(role="user", content=user_query))
+        if not chat_history:
+            # User Query is included in the chat history.. Add only when there is no chat_history
+            prompt_value.add_message(ChatMessage(role=ChatRole.USER, content=user_query))
     else:
         prompt_value = StringPromptValue(text=user_query)
     return prompt_value

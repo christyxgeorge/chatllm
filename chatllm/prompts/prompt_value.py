@@ -43,7 +43,9 @@ class StringPromptValue(PromptValue):
 
     def to_string(self, format="role:content") -> str:
         """Return prompt as string."""
-        return PromptFormatter.format([ChatMessage(role="user", content=self.text)], name=format)
+        return PromptFormatter.format(
+            [ChatMessage(role=ChatRole.USER, content=self.text)], name=format
+        )
 
     def to_messages(self) -> List[dict]:
         """Return prompt as dict of messages that can be serialized to JSON."""

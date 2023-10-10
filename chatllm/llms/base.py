@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, AsyncGenerator, List, Type
+from typing import Any, AsyncGenerator, Dict, List, Type
 
 from chatllm.llm_response import LLMResponse
 from chatllm.prompts import PromptValue
@@ -48,7 +48,7 @@ class BaseLLMProvider(ABC):
         }
 
     @staticmethod
-    def registered_models() -> List[str]:
+    def registered_models() -> Dict[str, Any]:
         """Return a list of supported models."""
         return BaseLLMProvider.llm_models
 

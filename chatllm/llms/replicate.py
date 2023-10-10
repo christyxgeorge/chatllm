@@ -1,6 +1,7 @@
 """Language Model To Interface With Local Llama.cpp models"""
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any, AsyncGenerator, List, Tuple
 
@@ -9,6 +10,8 @@ import requests
 from chatllm.llm_response import LLMResponse
 from chatllm.llms.base import BaseLLMProvider, LLMRegister
 from chatllm.prompts import PromptValue
+
+logger = logging.getLogger(__name__)
 
 
 @LLMRegister("replicate")
@@ -47,7 +50,9 @@ class ReplicateApi(BaseLLMProvider):
         """Return a list of supported models."""
         llm_models_url = "https://api.replicate.com/v1/collections/language-models"
         api_key = os.environ.get("REPLICATE_API_TOKEN")
-        response = requests.get(llm_models_url, headers={"Authorization": f"Token {api_key}"})
+        response = requests.get(
+            llm_models_url, timeout=30, headers={"Authorization": f"Token {api_key}"}
+        )
         if response.status_code == 200:
             models = [f"{x['owner']}/{x['name']}" for x in response.json()["models"]]
         else:
@@ -166,4 +171,4 @@ class ReplicateApi(BaseLLMProvider):
             llm_response.set_extra_info(metrics=prediction.metrics)
 
         except Exception as e:
-            logger.warn(f"Exception while parsing prediction logs: {e}")
+            logger.warning(f"Exception while parsing prediction logs: {e}")

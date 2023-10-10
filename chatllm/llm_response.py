@@ -5,7 +5,7 @@ import logging
 import random
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, model_validator
 
@@ -41,7 +41,7 @@ class LLMResponse(BaseModel):
     Usage as returned by the API
     """
 
-    finish_reason: str = None
+    finish_reason: Optional[str] = None
     """
     The completion reason for the response.
     One of 'stop', 'length', 'function' or 'error'
@@ -50,8 +50,8 @@ class LLMResponse(BaseModel):
     """
 
     start_time: datetime = datetime.now()
-    first_token_time: datetime = None
-    end_time: datetime = None
+    first_token_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
     """
     Start, End times for the generation process. Also, capture the timestamp for the 
     first token creation
@@ -81,7 +81,7 @@ class LLMResponse(BaseModel):
         self.finish_reason = finish_reason
         self.end_time = datetime.now()
 
-    def set_openai_response(self, response: dict | List[dict]):
+    def set_openai_response(self, response: Dict[str, Any]):
         """Set the LLM response message, when the response is not streamed (all at once))"""
         choices = response.get("choices", [])
         response_texts = [res["message"]["content"] for res in choices]
@@ -90,7 +90,7 @@ class LLMResponse(BaseModel):
         self.set_response(response_texts, finish_reason)
         self.set_api_usage(response["usage"])
 
-    def add_openai_delta(self, delta: dict | List[dict]) -> None:
+    def add_openai_delta(self, delta: Dict[str, Any]) -> None:
         """Add a LLM token to the response, when the response is streamed (OpenAI response format)"""
         choices = delta.get("choices", [])
         finish_reason = None
@@ -131,11 +131,11 @@ class LLMResponse(BaseModel):
 
     def set_token_count(self, prompt_count, completion_count) -> None:
         if self.prompt_tokens > 0 and self.prompt_tokens != prompt_count:
-            logger.warn(
+            logger.warning(
                 f"Prompt Token Count {prompt_count} is different from the computed value: {self.prompt_tokens}"
             )
         if self.completion_tokens > 0 and self.completion_tokens != completion_count:
-            logger.warn(
+            logger.warning(
                 f"Completion Token Count {completion_count} is different from the computed value: {self.completion_tokens}"
             )
         self.prompt_tokens = prompt_count

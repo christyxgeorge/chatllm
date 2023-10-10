@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 import logging
-from abc import ABC, abstractmethod
-from typing import List, Protocol
-
-from pydantic import BaseModel
+from typing import Any, Dict, List, Optional, Protocol, Tuple
 
 from .chat_message import ChatMessage, ChatRole
 
@@ -29,7 +26,7 @@ class PromptFormatter:
     """Prompt Formatted Class."""
 
     # Static dictionary of chat formats
-    _CHAT_FORMATS = {}
+    _CHAT_FORMATS: Dict[str, Any] = {}
 
     @classmethod
     def register_prompt_format(cls, name: str):
@@ -54,9 +51,8 @@ def _map_roles(
     """Map the message roles."""
     output: List[Tuple[str, Optional[str]]] = []
     for message in messages:
-        role = message["role"]
-        if role in role_map:
-            output.append((role_map[role], message["content"]))
+        if message.role in role_map:
+            output.append((role_map[message.role], message.content))
     return output
 
 
@@ -82,8 +78,8 @@ def format_chatml(messages: List[ChatMessage], **kwargs: Any) -> str:
     system_message = system_messages[0].content if system_messages else DEFAULT_SYSTEM_MESSAGE
     system_message = system_template.format(system_message=system_messages[0])
     roles = dict(user="<|im_start|>user", assistant="<|im_start|>assistant")
-    messages = _map_roles(messages, _roles)
-    messages.append((_roles["assistant"], None))
+    _messages = _map_roles(messages, roles)
+    _messages.append((roles["assistant"], None))
     return _format_chatml(system_message, _messages, sep="<|im_end|>")
 
 

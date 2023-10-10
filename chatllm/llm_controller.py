@@ -2,7 +2,7 @@
 import json
 import logging
 import time
-from typing import Any, Generator, List
+from typing import Any, AsyncGenerator, List
 
 from chatllm.llms.base import BaseLLMProvider
 from chatllm.prompts import PromptValue
@@ -16,6 +16,7 @@ class LLMController:
     """A chat Controller for conversational models."""
 
     def __init__(self) -> None:
+        self.model_name = None
         self.llm = None
         self.model_map = BaseLLMProvider.registered_models()
 
@@ -34,8 +35,8 @@ class LLMController:
 
     def load_model(self, model=None):
         """Load the model"""
-        model = model or self.get_default_model()
-        llm_key, model_name = model.split(":")
+        self.model_name = model or self.get_default_model()
+        llm_key, model_name = self.model_name.split(":")
         llm_info = self.model_map.get(llm_key)
         self.llm = llm_info["class"](model_name=model_name)
         # asyncio.run(self.llm.load())
@@ -48,7 +49,8 @@ class LLMController:
         prompt_value: PromptValue,
         verbose=True,
         **kwargs,
-    ) -> Generator[Any | str, Any, None]:
+    ) -> AsyncGenerator[Any | str, Any]:
+        assert self.llm is not None, f"Model {self.model_name} not loaded"  # nosec
         if verbose:
             print("=" * 130)
             print(f"Prompt = {type(prompt_value)} / {prompt_value}")
@@ -67,7 +69,7 @@ class LLMController:
                 response_delta.print_summary()
 
         except Exception as e:
-            logger.warn(f"Exception = {e}")
+            logger.warning(f"Exception = {e}")
             # TODO: Can't do gradio specific in this class!
             yield "error", f"Unable to generate response [{e}]"
 
@@ -77,6 +79,7 @@ class LLMController:
         verbose=True,
         **kwargs,
     ) -> Any:
+        assert self.llm is not None, f"Model {self.model_name} not loaded"  # nosec
         if verbose:
             print("=" * 130)
             print(f"Prompt = {prompt_value}")
@@ -93,5 +96,5 @@ class LLMController:
 
             return "content", response_text
         except Exception as e:
-            logger.warn(f"Exception = {e}")
+            logger.warning(f"Exception = {e}")
             return "error", f"Unable to generate response [{e}]"

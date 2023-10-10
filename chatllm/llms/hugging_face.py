@@ -60,7 +60,8 @@ class HFPipeline(BaseLLMProvider):
         # formatted_prompt = f"Question: {prompt} Answer: " if prompt else ""
         if self.model_name in ["roneneldan/TinyStories-33M"]:
             formatted_prompt = prompt_value.to_string(format="user_last")
-        formatted_prompt = prompt_value.to_string(format="chatml")
+        else:
+            formatted_prompt = prompt_value.to_string(format="chatml")
         return formatted_prompt  # , self.get_token_count(formatted_prompt)
 
     @staticmethod
@@ -124,7 +125,7 @@ class HFPipeline(BaseLLMProvider):
         Streaming not supported for HF models, so we similute a token-by-token async generation
         from the entire result
         """
-        logger.warn("Streaming not supported for HF models, Simulating generate instead")
+        logger.warning("Streaming not supported for HF models, Simulating generate instead")
         formatted_prompt = self.format_prompt(prompt_value)
         input_tokens = self.tokenizer.encode(formatted_prompt, return_tensors="pt")
         num_tokens = torch.numel(input_tokens)
@@ -145,6 +146,6 @@ class HFPipeline(BaseLLMProvider):
 
             # Last token!
             llm_response.add_last_delta()
-            yield result
+            yield llm_response
 
         return async_generator()
