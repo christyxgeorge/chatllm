@@ -1,5 +1,6 @@
+import logging
 import random
-from typing import Optional
+from typing import Any, Optional
 
 import pytest
 from chatllm.llm_controller import LLMController
@@ -10,6 +11,17 @@ from chatllm.prompts import (
     PromptValue,
     StringPromptValue,
 )
+from tests.conftest import BATCH_TEST_PAIRS
+
+logger = logging.getLogger(__name__)
+
+# ====================================================================================================
+# To run one test
+# poetry run pytest -v tests/test_llm.py::TestLLMGeneration::test_hugging_face_batch
+# To run one test with logs
+# poetry run pytest -v --log-cli-level=INFO tests/test_llm.py::TestLLMGeneration::test_replicate_batch
+# ====================================================================================================
+
 
 pytest_plugins = ("pytest_asyncio",)
 
@@ -55,36 +67,56 @@ class TestLLMGeneration:
             prompt_value = StringPromptValue(text=user_query)
         return prompt_value
 
-    async def run_llm_batch(self, provider, model_name, prompt=None, **kwargs):
-        model_name = f"{provider}:{model_name}"
-        print(f"Running test for {provider}, model = {model_name}")
+    def test_check(self, request, pytestconfig, batch_pairs) -> None:
+        mode = pytestconfig.getoption("mode")  # pytestconfig = request.config
+        print(f"Checking:")
+        print(f"   Root Dir = {request.config.rootdir}")
+        print(f"   Batch Pairs = {batch_pairs}")
+        print(f"   Mode = {mode} // {request.config.getoption('mode')}")
+
+    def _initialize_llm_controller(
+        self, mode, provider, model_name=None, prompt=None, **kwargs
+    ) -> tuple[
+        LLMController, PromptValue, dict[Any, Any]
+    ]:  # -> tuple[LLMController, PromptValue, dict[Any, Any]]:
         llm_controller = LLMController()
+        if not model_name:
+            supported_models = llm_controller.get_provider_model_list(provider)
+            assert supported_models, "No models found"  # nosec
+            model_name = random.choice(supported_models)  # nosec
+        else:
+            model_name = f"{provider}:{model_name}"
+        logger.info(f"Running [{mode}] test for {provider}, model = {model_name}")
         llm_controller.load_model(model_name)
         prompt = prompt or random.choice(EXAMPLES)[0]  # nosec
         prompt_value = self._create_prompt_value(prompt, SYSTEM_PROMPT, chat_history=[])
         params = llm_controller.get_model_params(model_name)
         llm_kwargs = {k: (v["default"] if isinstance(v, dict) else v) for k, v in params.items()}
         llm_kwargs.update(kwargs)
+        return llm_controller, prompt_value, llm_kwargs
+
+    async def run_llm_batch(self, provider, model_name=None, prompt=None, **kwargs):
+        llm_controller, prompt_value, llm_kwargs = self._initialize_llm_controller(
+            "batched", provider, model_name=model_name, prompt=prompt, **kwargs
+        )
         response_type, response_text = await llm_controller.run_batch(prompt_value, **llm_kwargs)
         assert response_type not in ["error", "warning"], f"{response_text}"  # nosec
 
-    async def run_llm_stream(self, provider, model_name, prompt=None, **kwargs):
-        model_name = f"{provider}:{model_name}"
-        print(f"Running test for {provider}, model = {model_name}")
-        llm_controller = LLMController()
-        llm_controller.load_model(model_name)
-        prompt = prompt or random.choice(EXAMPLES)[0]  # nosec
-        prompt_value = self._create_prompt_value(prompt, SYSTEM_PROMPT, chat_history=[])
-        params = llm_controller.get_model_params(model_name)
-        llm_kwargs = {k: (v["default"] if isinstance(v, dict) else v) for k, v in params.items()}
-        llm_kwargs.update(kwargs)
+    async def run_llm_stream(self, provider, model_name=None, prompt=None, **kwargs):
+        llm_controller, prompt_value, llm_kwargs = self._initialize_llm_controller(
+            "streamed", provider, model_name=model_name, prompt=prompt, **kwargs
+        )
         stream = llm_controller.run_stream(prompt_value, **llm_kwargs)
         async for response_type, response_text in stream:
             assert response_type not in ["error", "warning"], f"{response_text}"  # nosec
 
     @pytest.mark.asyncio
-    async def test_openai_batch(self, request):
-        print(f"Test OpenAI Batch, Root Dir = {request.config.rootdir}")
+    @pytest.mark.parametrize("provider,model_name", BATCH_TEST_PAIRS)
+    async def test_batch(self, provider, model_name):
+        await self.run_llm_batch(provider, model_name, max_tokens=100)
+
+    @pytest.mark.asyncio
+    async def test_openai_batch(self):
         await self.run_llm_batch("openai", "gpt-3.5-turbo", max_tokens=100)
 
     # Tests for batch APIs
@@ -102,8 +134,14 @@ class TestLLMGeneration:
         await self.run_llm_batch("replicate", "replicate/vicuna-13b", max_tokens=100)
 
     @pytest.mark.asyncio
-    async def test_hugging_face_batch(self):
-        await self.run_llm_batch("hf", "roneneldan/TinyStories-33M", max_tokens=100)
+    async def test_hugging_face_batch_ts(self):
+        prompt = "There was a girl called Lily and she"
+        await self.run_llm_batch("hf", "roneneldan/TinyStories-33M", max_tokens=100, prompt=prompt)
+
+    @pytest.mark.asyncio
+    async def test_hugging_face_batch_g2(self):
+        prompt = "There was a girl called Lily and she"
+        await self.run_llm_batch("hf", "gpt2", max_tokens=100, prompt=prompt)
 
     # Test Streaming APIs
     @pytest.mark.asyncio

@@ -9,11 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, model_validator
 
-# TODO: ID, is it per response or once at the constructor
-
 logger = logging.getLogger(__name__)
-
-# ResponseType = str | List[str]  # | List[Dict[str, Any]]
 
 
 class LLMResponse(BaseModel):
@@ -111,14 +107,13 @@ class LLMResponse(BaseModel):
 
         delta_list = delta if isinstance(delta, list) else [delta]
         assert self.num_sequences == len(delta_list)  # nosec
-
         if not self.first_token_time:
             self.first_token_time = datetime.now()
 
         for i, seq in enumerate(delta_list):
             self.response_sequences[i] += seq
 
-        self.completion_tokens += len(delta)  # One token per completion!
+        self.completion_tokens += len(delta_list)  # One token per completion!
 
     def add_last_delta(self, finish_reason="stop"):
         """
@@ -143,7 +138,10 @@ class LLMResponse(BaseModel):
 
     def set_api_usage(self, usage: Dict[str, Any]):
         self.api_usage = usage
+        logger.debug(f"Setting API Usage = {usage}")
         # In case, we have not computed completion tokens, we use the api_usage!
+        if self.prompt_tokens == 0:
+            self.prompt_tokens = usage.get("prompt_tokens", 0)
         if self.completion_tokens == 0:
             self.completion_tokens = usage.get("completion_tokens", 0)
 

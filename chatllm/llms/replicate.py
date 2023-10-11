@@ -74,9 +74,8 @@ class ReplicateApi(BaseLLMProvider):
         """Validate the kwargs passed to the model"""
         validated_kwargs = {}
         for k, v in kwargs.items():
-            print(f"Key = {k}, Value = {v}")
             if k not in self.input_properties:
-                print(f"Invalid key {k} for model {self.model_name}, Ignoring")
+                logger.warning(f"Invalid key {k} for model {self.model_name}, Ignoring")
             else:
                 validated_kwargs[k] = v
         return validated_kwargs
@@ -100,9 +99,8 @@ class ReplicateApi(BaseLLMProvider):
             **kwargs,
         }
 
-        # TODO: MOve this also to the predictions.create mechanism
-        print(f"Replicate prediction using {self.model_name}; Args = {input_args}")
-        iterator = self.llm.predict(**input_args)  # Iterator over the tokens
+        prediction = replicate.predictions.create(version=self.llm, input=input_args)
+        iterator = prediction.output_iterator()
 
         out_tokens = 0
         response_text = ""
@@ -112,6 +110,7 @@ class ReplicateApi(BaseLLMProvider):
 
         llm_response.set_response(response_text, "stop")
         llm_response.set_token_count(num_tokens, out_tokens)
+        self.set_prediction_info(prediction, llm_response)
         return llm_response
 
     async def generate_stream(
@@ -147,19 +146,21 @@ class ReplicateApi(BaseLLMProvider):
                 yield llm_response
 
             # Last token!
-            self.get_prediction_info(prediction, llm_response)
+            self.set_prediction_info(prediction, llm_response)
             llm_response.add_last_delta()
             yield llm_response
 
         return async_generator()
 
-    def get_prediction_info(self, prediction, llm_response: LLMResponse):
-        """Return the info for the generation"""
+    def set_prediction_info(self, prediction, llm_response: LLMResponse):
+        """Sets the info for the generation in LLMResponse"""
         try:
             prediction_logs = {
-                k[0]: k[1] for k in (x.split(":") for x in prediction.logs.split("\n") if ":" in x)
+                k[0]: k[1].strip()
+                for k in (x.split(":") for x in prediction.logs.split("\n") if ":" in x)
             }
-            logger.info(f"Prediction Logs = {prediction.logs} // {prediction_logs}")
+            logger.info(f"Prediction Status = {prediction.status}")
+            logger.info(f"Prediction Logs = {prediction_logs}")
             prompt_tokens = int(prediction_logs.get("Number of tokens in prompt", 0))
             completion_tokens = int(prediction_logs.get("Number of tokens generated", 0))
             usage = {

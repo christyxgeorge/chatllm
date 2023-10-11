@@ -1,6 +1,14 @@
 import os
 
+import pytest
 from dotenv import dotenv_values, load_dotenv
+
+BATCH_TEST_PAIRS = [("openai", "gpt-3.5-turbo"), ("replicate", "replicate/vicuna-13b")]
+
+
+def pytest_addoption(parser):
+    """Add options to the pytest command line"""
+    parser.addoption("--mode", action="store", default="all", help="'stream', 'batch' or 'all'")
 
 
 def pytest_configure():
@@ -11,6 +19,13 @@ def pytest_configure():
 def pytest_runtest_setup(item):
     # called for running each test in current directory
     print(f"setting up test {item}")
+
+
+@pytest.fixture(autouse=True, scope="session")
+def batch_pairs(pytestconfig):
+    mode = pytestconfig.getoption("mode")
+    print(f"Batch Pairs = {BATCH_TEST_PAIRS} // {mode}")
+    return BATCH_TEST_PAIRS
 
 
 def set_env(debug=False):

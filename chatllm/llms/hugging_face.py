@@ -61,7 +61,7 @@ class HFPipeline(BaseLLMProvider):
         if self.model_name in ["roneneldan/TinyStories-33M"]:
             formatted_prompt = prompt_value.to_string(format="user_last")
         else:
-            formatted_prompt = prompt_value.to_string(format="chatml")
+            formatted_prompt = prompt_value.to_string(format="role:content")
         return formatted_prompt  # , self.get_token_count(formatted_prompt)
 
     @staticmethod
@@ -104,7 +104,7 @@ class HFPipeline(BaseLLMProvider):
 
         hf_response = self.llm.generate(input_tokens, **kwargs)
         out_tokens = torch.numel(hf_response)  # sum([len(rt) for rt in zipped_tokens])
-        llm_response.set_token_count(prompt_count=input_tokens, completion_count=out_tokens)
+        llm_response.set_token_count(prompt_count=num_tokens, completion_count=out_tokens)
         if out_tokens:
             response_texts = [
                 "".join(self.tokenizer.batch_decode(seq, skip_special_tokens=True))
@@ -129,13 +129,15 @@ class HFPipeline(BaseLLMProvider):
         formatted_prompt = self.format_prompt(prompt_value)
         input_tokens = self.tokenizer.encode(formatted_prompt, return_tensors="pt")
         num_tokens = torch.numel(input_tokens)
+        llm_response = LLMResponse(
+            model=self.model, num_sequences=self.num_sequences, prompt_tokens=num_tokens
+        )
 
         kwargs = self.validate_kwargs(**kwargs)
 
         async def async_generator() -> Generator[Any]:
             hf_response = self.llm.generate(input_tokens, **kwargs)
             out_tokens = torch.numel(hf_response)  # sum([len(rt) for rt in zipped_tokens])
-            llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)
             if out_tokens:
                 # Strip Question and NBSPs(0xa0)
                 zipped_tokens = hf_response.t().tolist()

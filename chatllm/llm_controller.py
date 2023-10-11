@@ -29,6 +29,16 @@ class LLMController:
         ]
         return models
 
+    def get_provider_model_list(self, provider):
+        """return the list of models for the specified provider"""
+        models = [
+            f"{llm_key}:{m}"
+            for llm_key, llm_info in self.model_map.items()
+            for m in llm_info["models"]
+            if llm_key == provider
+        ]
+        return models
+
     def get_default_model(self) -> str:
         """return the default model"""
         return DEFAULT_MODEL
