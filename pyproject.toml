@@ -48,6 +48,7 @@ log_date_format = "%H:%M:%S"
 [tool.mypy]
 show_error_codes = true
 show_error_context = true
+show_column_numbers = true
 # plugins = "pydantic.mypy"
 
 [tool.bandit]
