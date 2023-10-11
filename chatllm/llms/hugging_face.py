@@ -25,7 +25,17 @@ class HFPipeline(BaseLLMProvider):
             self.tokenizer.pad_token = self.tokenizer.eos_token
         logger.info(f"Tokenizer initialized {self.tokenizer}")
 
-        self.num_sequences = 4 if self.model_name in ["roneneldan/TinyStories-33M"] else 1
+    @staticmethod
+    def get_supported_models() -> List[str]:
+        """Return a list of supported models."""
+        # TODO: Can load available models in the Local HF Cache ~/cache/huggingface/hub
+        return [
+            "gpt2",
+            "microsoft/phi-1_5",
+            "roneneldan/TinyStories-33M",
+            # "replit/replit-code-v1_5-3b", # Does not work..
+            # "TheBloke/Llama-2-7B-fp16"], # Does not work!
+        ]
 
     async def load(self, **kwargs: Any) -> None:
         """
@@ -46,6 +56,7 @@ class HFPipeline(BaseLLMProvider):
             "top_k": 3,
             "top_p": 0.9,
             "length_penalty": 1,
+            "num_sequences": 1,
         }
 
     def get_token_count(self, prompt: str) -> int:
@@ -64,29 +75,18 @@ class HFPipeline(BaseLLMProvider):
             formatted_prompt = prompt_value.to_string(format="role:content")
         return formatted_prompt  # , self.get_token_count(formatted_prompt)
 
-    @staticmethod
-    def get_supported_models() -> List[str]:
-        """Return a list of supported models."""
-        return [
-            "gpt2",
-            "microsoft/phi-1_5",
-            "roneneldan/TinyStories-33M",
-            "replit/replit-code-v1_5-3b",
-            # "TheBloke/Llama-2-7B-fp16"],
-        ]
-
     def validate_kwargs(self, **kwargs):
         """Validate the kwargs for the model"""
-        # TODO: replit/replit-code-v1_5-3b uses max_length instead of max_new_tokens, Check?
         kwargs["max_new_tokens"] = kwargs.pop("max_tokens", 2500)  # Rename to max_new_tokens
         kwargs["do_sample"] = True
         kwargs["pad_token_id"] = self.tokenizer.pad_token_id
 
         # To check multiple sequences
-        if self.num_sequences > 1:
+        num_sequences = kwargs.get("num_sequences", 1)
+        if num_sequences > 1:
             logger.info(f"Setting num_beams / num_return_sequences = {self.num_sequences}")
-            kwargs["num_beams"] = self.num_sequences
-            kwargs["num_return_sequences"] = self.num_sequences
+            kwargs["num_beams"] = num_sequences
+            kwargs["num_return_sequences"] = num_sequences
         logger.info(f"Validated kwargs = {kwargs}")
         return kwargs
 
@@ -140,6 +140,7 @@ class HFPipeline(BaseLLMProvider):
         async def async_generator() -> Generator[Any]:
             hf_response = self.llm.generate(input_tokens, **kwargs)
             out_tokens = torch.numel(hf_response)  # sum([len(rt) for rt in zipped_tokens])
+            logger.info(f"Hugging Face Response = {out_tokens} tokens generated")
             if out_tokens:
                 # Strip Question and NBSPs(0xa0)
                 zipped_tokens = hf_response.t().tolist()

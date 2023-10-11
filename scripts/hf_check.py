@@ -1,4 +1,8 @@
+import argparse
+import os
+
 import torch
+from dotenv import dotenv_values, load_dotenv
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
@@ -36,9 +40,41 @@ def hf(model_name, prompt):
     return sequences
 
 
-prompt = "System: You are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. User: Can you explain to me briefly what is Python programming language?"
-model = "gpt2"
+prompt = """
+System: You are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. "
+User: Can you explain to me briefly what is Python programming language?
+"""
 # model = "microsoft/phi-1_5"
 # prompt = "My name is Lewis and I like to "
 # model = "roneneldan/TinyStories-33M"
-hf(model, prompt)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="hfcheck", description="HF Check/Download Models")
+    parser.add_argument("-m", "--model", type=str, default="gpt2")
+    parser.add_argument("-v", "--verbose", action="store_true", help="using verbose mode")
+    args = parser.parse_args()
+    if args.verbose:
+        print(f"Arguments = {args}")
+    return args
+
+
+def set_env(debug=False):
+    """Load Environment Variables..."""
+
+    cur_dir = os.path.abspath(os.getcwd())
+    if debug:
+        config = dotenv_values(".env")
+        print(f"Current directory = {cur_dir}; Dotenv Values = {config}")
+
+    if os.path.exists(".env"):
+        load_dotenv(".env")
+        os.environ["CHATLLM_ROOT"] = cur_dir
+    else:
+        raise ValueError("Unable to load environment variables from .env file")
+
+
+if __name__ == "__main__":
+    set_env(debug=True)
+    args = parse_args()
+    hf(args.model, prompt)

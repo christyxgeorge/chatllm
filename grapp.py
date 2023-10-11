@@ -87,6 +87,7 @@ def load_demo(model_name, parameters: List[gr.Slider]):
         gr.Slider(**param_values["top_k"]),
         gr.Slider(**param_values["length_penalty"]),
         gr.Slider(**param_values["repeat_penalty"]),
+        gr.Slider(**param_values["num_sequences"]),
     )
 
 
@@ -132,6 +133,7 @@ def model_changed(state: gr.State, model_name: str, parameters: List[gr.Slider])
         gr.Slider(**param_values["top_k"]),
         gr.Slider(**param_values["length_penalty"]),
         gr.Slider(**param_values["repeat_penalty"]),
+        gr.Slider(**param_values["num_sequences"]),
     )
 
 
@@ -296,6 +298,15 @@ def setup_gradio(verbose=False):
                         label="Repeat Penalty",
                         elem_id="repeat_penalty",
                     )
+                    num_sequences = gr.Slider(
+                        minimum=1,
+                        maximum=5,
+                        value=1,
+                        step=1,
+                        interactive=True,
+                        label="Generate 'n' Sequences",
+                        elem_id="num_sequences",
+                    )
 
             with gr.Column(scale=8):
                 chatbot = gr.Chatbot(
@@ -328,7 +339,15 @@ def setup_gradio(verbose=False):
 
         gr.Examples(examples=examples, examples_per_page=20, inputs=user_prompt)
 
-        parameters = [max_tokens, temperature, top_p, top_k, length_penalty, repeat_penalty]
+        parameters = [
+            max_tokens,
+            temperature,
+            top_p,
+            top_k,
+            length_penalty,
+            repeat_penalty,
+            num_sequences,
+        ]
 
         # Event Handlers
         model_dropdown.change(
@@ -375,6 +394,11 @@ def setup_gradio(verbose=False):
         repeat_penalty.change(
             fn=lambda state, y: parameter_changed(state, repeat_penalty, y),
             inputs=[state, repeat_penalty],
+            outputs=[state],
+        )
+        num_sequences.change(
+            fn=lambda state, y: parameter_changed(state, num_sequences, y),
+            inputs=[state, num_sequences],
             outputs=[state],
         )
 
