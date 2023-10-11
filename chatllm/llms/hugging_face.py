@@ -58,7 +58,7 @@ class HFPipeline(BaseLLMProvider):
     def format_prompt(self, prompt_value: PromptValue) -> str:
         """Format the prompt and return the number of tokens in the prompt."""
         # formatted_prompt = f"Question: {prompt} Answer: " if prompt else ""
-        if self.model_name in ["roneneldan/TinyStories-33M"]:
+        if self.model_name in ["roneneldan/TinyStories-33M"]:  # , 'replit/replit-code-v1_5-3b']:
             formatted_prompt = prompt_value.to_string(format="user_last")
         else:
             formatted_prompt = prompt_value.to_string(format="role:content")
@@ -71,11 +71,13 @@ class HFPipeline(BaseLLMProvider):
             "gpt2",
             "microsoft/phi-1_5",
             "roneneldan/TinyStories-33M",
+            "replit/replit-code-v1_5-3b",
             # "TheBloke/Llama-2-7B-fp16"],
         ]
 
     def validate_kwargs(self, **kwargs):
         """Validate the kwargs for the model"""
+        # TODO: replit/replit-code-v1_5-3b uses max_length instead of max_new_tokens, Check?
         kwargs["max_new_tokens"] = kwargs.pop("max_tokens", 2500)  # Rename to max_new_tokens
         kwargs["do_sample"] = True
         kwargs["pad_token_id"] = self.tokenizer.pad_token_id

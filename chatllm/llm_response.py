@@ -60,6 +60,7 @@ class LLMResponse(BaseModel):
     """Any extra info returned from the API (like metrics)"""
 
     response_sequences: List[str] = []
+    last_tokens: List[str] = []
 
     @model_validator(mode="before")
     def set_default_values(cls, values: Dict[str, Any]) -> Dict[str, Any]:
@@ -110,6 +111,7 @@ class LLMResponse(BaseModel):
         if not self.first_token_time:
             self.first_token_time = datetime.now()
 
+        self.last_tokens = delta_list
         for i, seq in enumerate(delta_list):
             self.response_sequences[i] += seq
 
@@ -136,7 +138,7 @@ class LLMResponse(BaseModel):
         self.prompt_tokens = prompt_count
         self.completion_tokens = completion_count
 
-    def set_api_usage(self, usage: Dict[str, Any]):
+    def set_api_usage(self, usage: Dict[str, Any]) -> None:
         self.api_usage = usage
         logger.debug(f"Setting API Usage = {usage}")
         # In case, we have not computed completion tokens, we use the api_usage!
@@ -145,10 +147,13 @@ class LLMResponse(BaseModel):
         if self.completion_tokens == 0:
             self.completion_tokens = usage.get("completion_tokens", 0)
 
-    def set_extra_info(self, **kwargs):
+    def set_extra_info(self, **kwargs) -> None:
         self.extra_info.update(kwargs)
 
-    def get_first_sequence(self):
+    def get_first_of_last_token(self) -> str:
+        return self.last_tokens[0] if self.last_tokens else ""
+
+    def get_first_sequence(self) -> str:
         """Return the first sequence"""
         return self.response_sequences[0] if self.response_sequences else ""
 

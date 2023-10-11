@@ -1,16 +1,9 @@
 """Setup the Gradio App"""
 import logging
-from typing import List, Optional
+from typing import List
 
 import gradio as gr
 from chatllm.llm_controller import LLMController
-from chatllm.prompts import (
-    ChatMessage,
-    ChatPromptValue,
-    ChatRole,
-    PromptValue,
-    StringPromptValue,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -159,26 +152,6 @@ def vote(data: gr.LikeData):
     # gr.Info(f"You {action} this response: [{data.value}]")
 
 
-def _create_prompt_value(user_query, system_prompt, chat_history) -> PromptValue:
-    """Create a PromptValue object"""
-    prompt_value: Optional[PromptValue] = None
-    if system_prompt or len(chat_history) > 1:
-        prompt_value = ChatPromptValue()
-        if system_prompt:
-            prompt_value.add_message(ChatMessage(role="system", content=system_prompt))
-        for user_msg, ai_msg in chat_history:
-            if user_msg:
-                prompt_value.add_message(ChatMessage(role="user", content=user_msg))
-            if ai_msg:
-                prompt_value.add_message(ChatMessage(role="assistant", content=ai_msg))
-        if not chat_history:
-            # User Query is included in the chat history.. Add only when there is no chat_history
-            prompt_value.add_message(ChatMessage(role=ChatRole.USER, content=user_query))
-    else:
-        prompt_value = StringPromptValue(text=user_query)
-    return prompt_value
-
-
 def add_user_message(user_prompt: str, chat_history):
     chat_message = (user_prompt, None)
     return ("", chat_history + [chat_message], gr.Button(visible=False), gr.Button(visible=True))
@@ -198,9 +171,10 @@ async def submit_query(state: gr.State, chat_history, system_prompt: str):
     params = llm_controller.get_model_params(state["model"])
     kwargs = {k: v for k, v in state["params"].items() if k in params}
     user_query = chat_history[-1][0]
-    prompt_value = _create_prompt_value(user_query, system_prompt, chat_history)
+    prompt_value = llm_controller.create_prompt_value(user_query, system_prompt, chat_history)
     if state["stream_mode"]:
         stream = llm_controller.run_stream(prompt_value=prompt_value, **kwargs)
+        # print(f"Stream type = {type(stream)}")
         async for response_type, response_text in stream:
             _handle_response(response_type, response_text, chat_history)
             yield chat_history, gr.Button(visible=False), gr.Button(visible=True)

@@ -38,11 +38,10 @@ class ReplicateApi(BaseLLMProvider):
     def get_params(self) -> List[str]:
         """Return Parameters supported by the model"""
         return {
-            "max_tokens": 2500,
+            "max_tokens": 2500,  # max_length
             "temperature": 0.8,
-            "top_k": 3,
             "top_p": 0.9,
-            "length_penalty": 1,
+            "repeat_penalty": 1,  # repetition_penalty
         }
 
     @staticmethod
@@ -73,6 +72,10 @@ class ReplicateApi(BaseLLMProvider):
     def validate_kwargs(self, **kwargs):
         """Validate the kwargs passed to the model"""
         validated_kwargs = {}
+        # Rename max_tokens to max_length
+        kwargs["max_length"] = kwargs.pop("max_tokens", 2500)  # Rename to max_new_tokens
+        kwargs["repetition_penalty"] = kwargs.pop("repeat_penalty", 1)
+        logger.info(f"Supported tokens: {', '.join(k for k in self.input_properties.keys())}")
         for k, v in kwargs.items():
             if k not in self.input_properties:
                 logger.warning(f"Invalid key {k} for model {self.model_name}, Ignoring")

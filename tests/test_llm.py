@@ -1,16 +1,10 @@
 import logging
 import random
-from typing import Any, Optional
+from typing import Any
 
 import pytest
 from chatllm.llm_controller import LLMController
-from chatllm.prompts import (
-    ChatMessage,
-    ChatPromptValue,
-    ChatRole,
-    PromptValue,
-    StringPromptValue,
-)
+from chatllm.prompts import PromptValue
 from tests.conftest import BATCH_TEST_PAIRS
 
 logger = logging.getLogger(__name__)
@@ -48,25 +42,6 @@ EXAMPLES = [
 
 
 class TestLLMGeneration:
-    def _create_prompt_value(self, user_query, system_prompt, chat_history=[]) -> PromptValue:
-        """Create a PromptValue object"""
-        prompt_value: Optional[PromptValue] = None
-        if system_prompt or len(chat_history) > 1:
-            prompt_value = ChatPromptValue()
-            if system_prompt:
-                prompt_value.add_message(ChatMessage(role=ChatRole.SYSTEM, content=system_prompt))
-            for user_msg, ai_msg in chat_history:
-                if user_msg:
-                    prompt_value.add_message(ChatMessage(role=ChatRole.USER, content=user_msg))
-                if ai_msg:
-                    prompt_value.add_message(ChatMessage(role=ChatRole.AI, content=ai_msg))
-            if not chat_history:
-                # User Query is included in the chat history.. Add only when there is no chat_history
-                prompt_value.add_message(ChatMessage(role=ChatRole.USER, content=user_query))
-        else:
-            prompt_value = StringPromptValue(text=user_query)
-        return prompt_value
-
     def test_check(self, request, pytestconfig, batch_pairs) -> None:
         mode = pytestconfig.getoption("mode")  # pytestconfig = request.config
         print(f"Checking:")
@@ -89,7 +64,7 @@ class TestLLMGeneration:
         logger.info(f"Running [{mode}] test for {provider}, model = {model_name}")
         llm_controller.load_model(model_name)
         prompt = prompt or random.choice(EXAMPLES)[0]  # nosec
-        prompt_value = self._create_prompt_value(prompt, SYSTEM_PROMPT, chat_history=[])
+        prompt_value = llm_controller.create_prompt_value(prompt, SYSTEM_PROMPT, chat_history=[])
         params = llm_controller.get_model_params(model_name)
         llm_kwargs = {k: (v["default"] if isinstance(v, dict) else v) for k, v in params.items()}
         llm_kwargs.update(kwargs)

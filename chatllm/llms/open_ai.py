@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, AsyncGenerator, List
+from typing import Any, AsyncGenerator, Generator, List
 
 import openai
 import tiktoken

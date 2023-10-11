@@ -20,6 +20,9 @@ bitsandbytes = "^0.41.1"
 replicate = "^0.14.0"
 einops = "^0.7.0"
 pytest-asyncio = "^0.21.1"
+click-repl = "^0.3.0"
+colorama = "^0.4.6"
+click = "^8.1.7"
 
 
 [tool.poetry.group.dev.dependencies]
