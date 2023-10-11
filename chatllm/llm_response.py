@@ -2,12 +2,11 @@
 
 import json
 import logging
-import random
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, model_validator  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +27,7 @@ class LLMResponse(BaseModel):
     completion_tokens: int = 0
     """
     The number of tokens in the prompt and completion respectively.
-    Note: If more than one sequence is generated, the completion tokens will 
+    Note: If more than one sequence is generated, the completion tokens will
     be the sum of all the  sequences.
     """
 
@@ -41,16 +40,16 @@ class LLMResponse(BaseModel):
     """
     The completion reason for the response.
     One of 'stop', 'length', 'function' or 'error'
-    Note: In OpenAI Api, the finish_reason is for each sequence. Here, we are keeping
-    across all the sequences.
+    Note: In OpenAI Api, the finish_reason is for each sequence.
+    Here, we are keeping across all the sequences.
     """
 
     start_time: datetime = datetime.now()
     first_token_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     """
-    Start, End times for the generation process. Also, capture the timestamp for the 
-    first token creation
+    Start, End times for the generation process. Also, capture the
+    timestamp for the first token creation
     """
 
     created_ts: int = 0
@@ -88,7 +87,10 @@ class LLMResponse(BaseModel):
         self.set_api_usage(response["usage"])
 
     def add_openai_delta(self, delta: Dict[str, Any]) -> None:
-        """Add a LLM token to the response, when the response is streamed (OpenAI response format)"""
+        """
+        Add a LLM token to the response, when the response is streamed
+        (OpenAI response format)
+        """
         choices = delta.get("choices", [])
         finish_reason = None
         if choices:
@@ -117,7 +119,7 @@ class LLMResponse(BaseModel):
 
         self.completion_tokens += len(delta_list)  # One token per completion!
 
-    def add_last_delta(self, finish_reason="stop"):
+    def add_last_delta(self, finish_reason="stop") -> None:
         """
         Add the last token, when the response is streamed.
         This is to ensure that the finish_reason is propagated back!
@@ -129,11 +131,13 @@ class LLMResponse(BaseModel):
     def set_token_count(self, prompt_count, completion_count) -> None:
         if self.prompt_tokens > 0 and self.prompt_tokens != prompt_count:
             logger.warning(
-                f"Prompt Token Count {prompt_count} is different from the computed value: {self.prompt_tokens}"
+                f"Prompt Token Count {prompt_count} is different "
+                "from the computed value: {self.prompt_tokens}"
             )
         if self.completion_tokens > 0 and self.completion_tokens != completion_count:
             logger.warning(
-                f"Completion Token Count {completion_count} is different from the computed value: {self.completion_tokens}"
+                f"Completion Token Count {completion_count} is different "
+                "from the computed value: {self.completion_tokens}"
             )
         self.prompt_tokens = prompt_count
         self.completion_tokens = completion_count
@@ -141,7 +145,7 @@ class LLMResponse(BaseModel):
     def set_api_usage(self, usage: Dict[str, Any]) -> None:
         self.api_usage = usage
         logger.debug(f"Setting API Usage = {usage}")
-        # In case, we have not computed completion tokens, we use the api_usage!
+        # In case, we have not computed completion tokens, we use api_usage!
         if self.prompt_tokens == 0:
             self.prompt_tokens = usage.get("prompt_tokens", 0)
         if self.completion_tokens == 0:
@@ -157,7 +161,7 @@ class LLMResponse(BaseModel):
         """Return the first sequence"""
         return self.response_sequences[0] if self.response_sequences else ""
 
-    def print_summary(self):
+    def print_summary(self) -> None:
         elapsed_time = (self.end_time - self.start_time).total_seconds()
         response_text = self.get_first_sequence()
         usage = {
@@ -165,19 +169,21 @@ class LLMResponse(BaseModel):
             "completion_tokens": self.completion_tokens,
             "total_tokens": self.prompt_tokens + self.completion_tokens,
         }
-        print(f"Response: {response_text}")
-        print(f"    Model: {self.model}")
-        print(f"    Computed Usage = {json.dumps(usage or {})}")
+        print(f"Response: {response_text}")  # noqa: T201
+        print(f"    Model: {self.model}")  # noqa: T201
+        print(f"    Computed Usage = {json.dumps(usage or {})}")  # noqa: T201
         if self.api_usage:
-            print(f"    API Usage = {json.dumps(self.api_usage)}")
-        print(f"    Stop Reason = {self.finish_reason or 'n/a'}")
+            print(f"    API Usage = {json.dumps(self.api_usage)}")  # noqa: T201
+        print(f"    Stop Reason = {self.finish_reason or 'n/a'}")  # noqa: T201
         if "metrics" in self.extra_info:
-            print(f"    Metrics = {json.dumps(self.extra_info['metrics'])}")
+            metrics_str = f"    Metrics = {json.dumps(self.extra_info['metrics'])}"
+            print(metrics_str)  # noqa: T201
         if self.first_token_time:
-            token_gen_time = (self.end_time - self.first_token_time).total_seconds()
-            token_gen_str = f"Time between first token and last token: {token_gen_time:.03f} secs"
+            tkn_gen_time = (self.end_time - self.first_token_time).total_seconds()
+            tkn_gen_str = "Time between first token and last token:"  # nosec
+            tkn_gen_str = f"{tkn_gen_str} {tkn_gen_time:.03f} secs"
         else:
-            token_gen_str = ""
+            tkn_gen_str = ""  # nosec
         if elapsed_time > 60:
             elapsed_secs = elapsed_time % 60
             elapsed_sec_str = f"{int(elapsed_time//60)} mins, {elapsed_secs:.03f} secs)"
@@ -188,5 +194,6 @@ class LLMResponse(BaseModel):
             if usage
             else "Not Available"
         )
-        print(f"Elapsed time = {elapsed_sec_str} secs, {tokens_per_sec}. {token_gen_str}")
-        print("=" * 130)
+        summary_str = f"Time Taken: {elapsed_sec_str} ({tokens_per_sec})"
+        print(summary_str)  # noqa: T201
+        print("=" * 130)  # noqa: T201

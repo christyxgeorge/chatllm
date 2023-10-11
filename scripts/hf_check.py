@@ -1,3 +1,5 @@
+# flake8: noqa
+"""Test Script to download, check HF models"""
 import argparse
 import os
 
@@ -50,9 +52,13 @@ User: Can you explain to me briefly what is Python programming language?
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(prog="hfcheck", description="HF Check/Download Models")
+    parser = argparse.ArgumentParser(
+        prog="hfcheck", description="HF Check/Download Models"
+    )
     parser.add_argument("-m", "--model", type=str, default="gpt2")
-    parser.add_argument("-v", "--verbose", action="store_true", help="using verbose mode")
+    parser.add_argument(
+        "-v", "--verbose", action="store_true", help="using verbose mode"
+    )
     args = parser.parse_args()
     if args.verbose:
         print(f"Arguments = {args}")

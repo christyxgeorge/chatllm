@@ -5,10 +5,11 @@ import logging
 from typing import Any, AsyncGenerator, Generator, List
 
 import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
 from chatllm.llm_response import LLMResponse
 from chatllm.llms.base import BaseLLMProvider, LLMRegister
 from chatllm.prompts import PromptValue
-from transformers import AutoModelForCausalLM, AutoTokenizer
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +20,12 @@ class HFPipeline(BaseLLMProvider):
 
     def __init__(self, model_name: str, **kwargs) -> None:
         super().__init__(model_name, **kwargs)
-        self.llm = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True)
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+        self.llm = AutoModelForCausalLM.from_pretrained(
+            model_name, trust_remote_code=True
+        )
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            model_name, trust_remote_code=True
+        )
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         logger.info(f"Tokenizer initialized {self.tokenizer}")
@@ -69,7 +74,9 @@ class HFPipeline(BaseLLMProvider):
     def format_prompt(self, prompt_value: PromptValue) -> str:
         """Format the prompt and return the number of tokens in the prompt."""
         # formatted_prompt = f"Question: {prompt} Answer: " if prompt else ""
-        if self.model_name in ["roneneldan/TinyStories-33M"]:  # , 'replit/replit-code-v1_5-3b']:
+        if self.model_name in [
+            "roneneldan/TinyStories-33M"
+        ]:  # , 'replit/replit-code-v1_5-3b']:
             formatted_prompt = prompt_value.to_string(format="user_last")
         else:
             formatted_prompt = prompt_value.to_string(format="role:content")
@@ -77,14 +84,18 @@ class HFPipeline(BaseLLMProvider):
 
     def validate_kwargs(self, **kwargs):
         """Validate the kwargs for the model"""
-        kwargs["max_new_tokens"] = kwargs.pop("max_tokens", 2500)  # Rename to max_new_tokens
+        kwargs["max_new_tokens"] = kwargs.pop(
+            "max_tokens", 2500
+        )  # Rename to max_new_tokens
         kwargs["do_sample"] = True
         kwargs["pad_token_id"] = self.tokenizer.pad_token_id
 
         # To check multiple sequences
         num_sequences = kwargs.get("num_sequences", 1)
         if num_sequences > 1:
-            logger.info(f"Setting num_beams / num_return_sequences = {self.num_sequences}")
+            logger.info(
+                f"Setting num_beams / num_return_sequences = {self.num_sequences}"
+            )
             kwargs["num_beams"] = num_sequences
             kwargs["num_return_sequences"] = num_sequences
         logger.info(f"Validated kwargs = {kwargs}")
@@ -106,7 +117,9 @@ class HFPipeline(BaseLLMProvider):
 
         hf_response = self.llm.generate(input_tokens, **kwargs)
         out_tokens = torch.numel(hf_response)  # sum([len(rt) for rt in zipped_tokens])
-        llm_response.set_token_count(prompt_count=num_tokens, completion_count=out_tokens)
+        llm_response.set_token_count(
+            prompt_count=num_tokens, completion_count=out_tokens
+        )
         if out_tokens:
             response_texts = [
                 "".join(self.tokenizer.batch_decode(seq, skip_special_tokens=True))
@@ -127,7 +140,9 @@ class HFPipeline(BaseLLMProvider):
         Streaming not supported for HF models, so we similute a token-by-token async generation
         from the entire result
         """
-        logger.warning("Streaming not supported for HF models, Simulating generate instead")
+        logger.warning(
+            "Streaming not supported for HF models, Simulating generate instead"
+        )
         formatted_prompt = self.format_prompt(prompt_value)
         input_tokens = self.tokenizer.encode(formatted_prompt, return_tensors="pt")
         num_tokens = torch.numel(input_tokens)
@@ -139,13 +154,17 @@ class HFPipeline(BaseLLMProvider):
 
         async def async_generator() -> Generator[Any]:
             hf_response = self.llm.generate(input_tokens, **kwargs)
-            out_tokens = torch.numel(hf_response)  # sum([len(rt) for rt in zipped_tokens])
+            out_tokens = torch.numel(
+                hf_response
+            )  # sum([len(rt) for rt in zipped_tokens])
             logger.info(f"Hugging Face Response = {out_tokens} tokens generated")
             if out_tokens:
                 # Strip Question and NBSPs(0xa0)
                 zipped_tokens = hf_response.t().tolist()
                 for tokens in zipped_tokens:
-                    token_texts = self.tokenizer.batch_decode(tokens, skip_special_tokens=True)
+                    token_texts = self.tokenizer.batch_decode(
+                        tokens, skip_special_tokens=True
+                    )
                     llm_response.add_delta(list(token_texts))
                     yield llm_response
 

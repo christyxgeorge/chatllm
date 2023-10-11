@@ -7,7 +7,7 @@ from typing import Any, Mapping, Optional
 from pydantic import BaseModel, Field
 
 
-## TODO: What if role names are specific to LLM?
+# TODO: What if role names are specific to LLM?
 class ChatRole(str, Enum):
     """Roles Assigned to Prompts"""
 
@@ -58,7 +58,9 @@ class ChatMessage(BaseModel):
                 additional_kwargs = {"function_call": dict(_dict["function_call"])}
             else:
                 additional_kwargs = {}
-            return ChatMessage(role=role, content=content, additional_kwargs=additional_kwargs)
+            return ChatMessage(
+                role=role, content=content, additional_kwargs=additional_kwargs
+            )
         else:
             return ChatMessage(role=role, content=_dict["content"])
 
@@ -70,7 +72,9 @@ class ChatMessage(BaseModel):
             message_dict["name"] = message.name  # type: ignore
         elif message.role == ChatRole.AI:
             if "function_call" in message.additional_kwargs:
-                message_dict["function_call"] = message.additional_kwargs["function_call"]
+                message_dict["function_call"] = message.additional_kwargs[
+                    "function_call"
+                ]
         if message.role != ChatRole.FUNCTION and "name" in message.additional_kwargs:
             message_dict["name"] = message.additional_kwargs["name"]
         return message_dict

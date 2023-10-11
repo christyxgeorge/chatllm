@@ -6,14 +6,15 @@ import time
 from typing import Any, Dict, Tuple
 
 import click
-from chatllm.prompts.prompt_value import PromptValue
-from chatllm.utils import set_env
 from click_repl import repl
 from click_repl.exceptions import ExitReplException
 from colorama import Fore, Style
 from prompt_toolkit.application import get_app
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.history import FileHistory  # , InMemoryHistory
+
+from chatllm.prompts.prompt_value import PromptValue
+from chatllm.utils import set_env
 
 DEFAULT_TEMPERATURE = 0.75
 MODEL_INFO: "Dict[str, str]" = {
@@ -83,11 +84,18 @@ class ChatLLMContext(object):
         """Add Variable reference"""
         return self.vars.get(key)
 
-    async def llm_stream(self, prompt_value: PromptValue, **llm_kwargs) -> Tuple[str, str]:
-        stream = self.llm_controller.run_stream(prompt_value, word_by_word=True, **llm_kwargs)
+    async def llm_stream(
+        self, prompt_value: PromptValue, **llm_kwargs
+    ) -> Tuple[str, str]:
+        stream = self.llm_controller.run_stream(
+            prompt_value, word_by_word=True, **llm_kwargs
+        )
         click.echo("Response: ", nl=False)
         async for response_type, response_text in stream:
-            assert response_type not in ["error", "warning"], f"{response_text}"  # nosec
+            assert response_type not in [
+                "error",
+                "warning",
+            ], f"{response_text}"  # nosec
             click.echo(response_text, nl=False)
             # await asyncio.sleep(1)  # Sleep to check if this is working!
         click.echo("")  # New line
@@ -102,14 +110,21 @@ class ChatLLMContext(object):
                 self.llm_controller.load_model(self.model_name)
             params = self.llm_controller.get_model_params(self.model_name)
             llm_kwargs = {
-                k: (v["default"] if isinstance(v, dict) else v) for k, v in params.items()
+                k: (v["default"] if isinstance(v, dict) else v)
+                for k, v in params.items()
             }
             llm_kwargs.update(**self.vars)  # Update with the current variables
-            llm_kwargs.update(**kwargs)  # Update with any over-rides specified in kwargs
+            llm_kwargs.update(
+                **kwargs
+            )  # Update with any over-rides specified in kwargs
             click.echo(f"Arguments to LLM: {llm_kwargs}")
-            prompt_value = self.llm_controller.create_prompt_value(prompt, "", chat_history=[])
+            prompt_value = self.llm_controller.create_prompt_value(
+                prompt, "", chat_history=[]
+            )
             if self.mode == "stream":
-                response_type, response = asyncio.run(self.llm_stream(prompt_value, **llm_kwargs))
+                response_type, response = asyncio.run(
+                    self.llm_stream(prompt_value, **llm_kwargs)
+                )
             else:
                 response_type, response = asyncio.run(
                     self.llm_controller.run_batch(prompt_value, **llm_kwargs)
@@ -283,7 +298,9 @@ def model_key(obj, model_key):
         obj.set_model(model_key)
         obj.show_context_info()
     else:
-        click.echo(f"Invalid Model Key: {model_key}, Valid Options are {MODEL_INFO.keys()}")
+        click.echo(
+            f"Invalid Model Key: {model_key}, Valid Options are {MODEL_INFO.keys()}"
+        )
 
 
 @cli.command(name="mode")
@@ -317,7 +334,9 @@ def model_temperature(obj, temperature):
 
 @cli.command()
 @click.pass_obj
-@click.argument("prompt", required=True)  # prompt="Enter Query", help="The Query for LLAMA-2")
+@click.argument(
+    "prompt", required=True
+)  # prompt="Enter Query", help="The Query for LLAMA-2")
 @click.option(
     "-t",
     "--temperature",
@@ -333,7 +352,9 @@ def vicuna(obj, prompt: str, temperature: float):
 
 @cli.command()
 @click.pass_obj
-@click.argument("prompt", required=True)  # prompt="Enter Query", help="The Query for GPT-4")
+@click.argument(
+    "prompt", required=True
+)  # prompt="Enter Query", help="The Query for GPT-4")
 @click.option(
     "-t",
     "--temperature",
@@ -349,9 +370,16 @@ def gpt4(obj, prompt: str, temperature: float):
 
 @cli.command()
 @click.pass_obj
-@click.argument("prompt", required=True)  # prompt="Enter Query", help="The Query for GPT-4")
+@click.argument(
+    "prompt", required=True
+)  # prompt="Enter Query", help="The Query for GPT-4")
 @click.option(
-    "-t", "--temperature", default=0.2, type=float, help="LLM Temperature", show_default=True
+    "-t",
+    "--temperature",
+    default=0.2,
+    type=float,
+    help="LLM Temperature",
+    show_default=True,
 )
 def gpt(obj, prompt: str, temperature: float):
     """Sends the user query to OpenAI GPT 3.5"""
@@ -360,9 +388,16 @@ def gpt(obj, prompt: str, temperature: float):
 
 @cli.command()
 @click.pass_obj
-@click.argument("prompt", required=True)  # prompt="Enter Query", help="The Query for GPT-4")
+@click.argument(
+    "prompt", required=True
+)  # prompt="Enter Query", help="The Query for GPT-4")
 @click.option(
-    "-t", "--temperature", default=0.2, type=float, help="LLM Temperature", show_default=True
+    "-t",
+    "--temperature",
+    default=0.2,
+    type=float,
+    help="LLM Temperature",
+    show_default=True,
 )
 def davinci(obj, prompt: str, temperature: float):
     """Sends the user query to OpenAI Davinci"""
@@ -371,7 +406,9 @@ def davinci(obj, prompt: str, temperature: float):
 
 @cli.command()
 @click.pass_obj
-@click.argument("prompt", required=True)  # prompt="Enter Query", help="The Query for GPT-4")
+@click.argument(
+    "prompt", required=True
+)  # prompt="Enter Query", help="The Query for GPT-4")
 @click.option(
     "-t",
     "--temperature",

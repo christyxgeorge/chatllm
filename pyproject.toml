@@ -31,6 +31,8 @@ bandit = "^1.7.5"
 mypy = "^1.5.1"
 black = "^23.9.1"
 types-requests = "^2.31.0.8"
+pre-commit = "^3.4.0"
+isort = "^5.12.0"
 
 [tool.pytest.ini_options]
 pythonpath = [
@@ -43,6 +45,13 @@ log_level = "INFO"
 log_format = "%(asctime)s %(levelname)s [%(name)s]: %(message)s"
 log_date_format = "%H:%M:%S"
 
+[tool.mypy]
+show_error_codes = true
+show_error_context = true
+# plugins = "pydantic.mypy"
+
+[tool.bandit]
+exclude_dirs = ["tests", "./.history", "./.venv", "./.git"]
 
 [build-system]
 requires = ["poetry-core"]

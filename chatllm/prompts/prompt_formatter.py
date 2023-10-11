@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, Protocol, Tuple
+from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple
 
 from .chat_message import ChatMessage, ChatRole
 
@@ -29,7 +29,9 @@ class PromptFormatter:
     _CHAT_FORMATS: Dict[str, Any] = {}
 
     @classmethod
-    def register_prompt_format(cls, name: str):
+    def register_prompt_format(
+        cls, name: str
+    ) -> Callable[..., PromptFormatterProtocol]:
         logger.info(f"Registering Prompt Format: {name}")
 
         def decorator(f: PromptFormatterProtocol):
@@ -40,7 +42,9 @@ class PromptFormatter:
 
     @classmethod
     def format(cls, messages: List[ChatMessage], name=DEFAULT_PROMPT_FORMAT):
-        formatter = cls._CHAT_FORMATS.get(name, cls._CHAT_FORMATS[DEFAULT_PROMPT_FORMAT])
+        formatter = cls._CHAT_FORMATS.get(
+            name, cls._CHAT_FORMATS[DEFAULT_PROMPT_FORMAT]
+        )
         return formatter(messages)
 
 
@@ -75,7 +79,9 @@ def format_chatml(messages: List[ChatMessage], **kwargs: Any) -> str:
     system_template = """<|im_start|>system
 {system_message}"""
     system_messages = [m for m in messages if m.role == ChatRole.SYSTEM]
-    system_message = system_messages[0].content if system_messages else DEFAULT_SYSTEM_MESSAGE
+    system_message = (
+        system_messages[0].content if system_messages else DEFAULT_SYSTEM_MESSAGE
+    )
     system_message = system_template.format(system_message=system_messages[0])
     roles = dict(user="<|im_start|>user", assistant="<|im_start|>assistant")
     _messages = _map_roles(messages, roles)

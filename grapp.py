@@ -3,6 +3,7 @@ import logging
 from typing import List
 
 import gradio as gr
+
 from chatllm.llm_controller import LLMController
 
 logger = logging.getLogger(__name__)
@@ -10,29 +11,34 @@ logger = logging.getLogger(__name__)
 # ===========================================================================================
 # Constants
 # ===========================================================================================
-SHARED_UI_WARNING = f"""
-"""
+SHARED_UI_WARNING = ""
 
 title = "ChatLLM: A Chatbot for Language Models"
 TITLE_MARKDOWN = f"""
 <h1 style='text-align: center; color: #e47232'>{title}</h1>
 """
 
-simple_system_prompt = "You are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe."
-long_system_prompt = """
-You are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. 
-Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content.
-Please ensure that your responses are socially unbiased and positive in nature.
+simple_system_prompt = """\
+You are a helpful, respectful and honest assistant. \
+Always answer as helpfully as possible, while being safe.\
+"""
+long_system_prompt = """\
+You are a helpful, respectful and honest assistant. Always answer as helpfully as possible,
+while being safe. Your answers should not include any harmful, unethical, racist, sexist,
+toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased
+and positive in nature.
 
-If a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct.
-If you don't know the answer to a question, please don't share false information.
+If a question does not make any sense, or is not factually coherent, explain why instead of
+answering something not correct. If you don't know the answer to a question, please don't share
+false information.
 """
 
 examples = [
     ["Hello there! How are you doing?"],
     ["Can you explain to me briefly what is Python programming language?"],
     [
-        "please write a python program to find the first n numbers of the fibonacci series, where n is the input variable"
+        "please write a python program to find the first n numbers of the fibonacci series, "
+        "where n is the input variable"
     ],
     ["Explain the plot of Cinderella in a sentence."],
     ["How many hours does it take a man to eat a Helicopter?"],
@@ -40,10 +46,13 @@ examples = [
     ["Write a python function to derive the fibonacci sequence for a given input?"],
     ["What are the capitals of Mozambique and Tanzania?"],
     ["Who is the current world champion in cricket"],
-    ["Sally has two brothers and two sisters. How many sisters does sally's brother have?"],
+    [
+        "Sally has two brothers and two sisters. How many sisters does sally's brother have?"
+    ],
     ["Where is India"],
     [
-        "In bash, how do i list all the text files in the current directory that have been modified in the last month"
+        "In bash, how do i list all the text files in the current directory "
+        "that have been modified in the last month"
     ],
     ["Name the planets in the solar system?"],
 ]
@@ -73,7 +82,9 @@ def load_demo(model_name, parameters: List[gr.Slider]):
     arg_values = {p.elem_id: p.value for p in parameters}
     llm_controller.load_model(model_name)
     params = llm_controller.get_model_params(model_name)
-    param_values = {k: get_param_values(params, k, arg_values[k]) for k in arg_values.keys()}
+    param_values = {
+        k: get_param_values(params, k, arg_values[k]) for k in arg_values.keys()
+    }
     values = {k: v["value"] for k, v in param_values.items()}
     state = {"stream_mode": True, "model": model_name, "params": values}
     logger.info(f"Loaded Demo: state = {state}")
@@ -138,7 +149,9 @@ def model_changed(state: gr.State, model_name: str, parameters: List[gr.Slider])
 
 
 def parameter_changed(state: gr.State, parameter: gr.Slider, value: int | float):
-    logger.debug(f"Parameter: {parameter.elem_id} // Value: {value} / {parameter.value}")
+    logger.debug(
+        f"Parameter: {parameter.elem_id} // Value: {value} / {parameter.value}"
+    )
     state["params"][parameter.elem_id] = value
     return state
 
@@ -150,13 +163,18 @@ def mode_changed(state: gr.State, active_mode: str):
 
 def vote(data: gr.LikeData):
     action = "upvoted" if data.liked else "downvoted"
-    print(f"You {action} this response: [{data.value}]")
+    print(f"You {action} this response: [{data.value}]")  # noqa: T201
     # gr.Info(f"You {action} this response: [{data.value}]")
 
 
 def add_user_message(user_prompt: str, chat_history):
     chat_message = (user_prompt, None)
-    return ("", chat_history + [chat_message], gr.Button(visible=False), gr.Button(visible=True))
+    return (
+        "",
+        chat_history + [chat_message],
+        gr.Button(visible=False),
+        gr.Button(visible=True),
+    )
 
 
 def _handle_response(response_type, response_text, chat_history):
@@ -173,7 +191,9 @@ async def submit_query(state: gr.State, chat_history, system_prompt: str):
     params = llm_controller.get_model_params(state["model"])
     kwargs = {k: v for k, v in state["params"].items() if k in params}
     user_query = chat_history[-1][0]
-    prompt_value = llm_controller.create_prompt_value(user_query, system_prompt, chat_history)
+    prompt_value = llm_controller.create_prompt_value(
+        user_query, system_prompt, chat_history
+    )
     if state["stream_mode"]:
         stream = llm_controller.run_stream(prompt_value=prompt_value, **kwargs)
         # print(f"Stream type = {type(stream)}")
@@ -239,7 +259,9 @@ def setup_gradio(verbose=False):
 
         with gr.Row():
             with gr.Column(scale=2):
-                with gr.Accordion("Parameters", open=False, visible=False) as parameter_row:
+                with gr.Accordion(
+                    "Parameters", open=False, visible=False
+                ) as parameter_row:
                     max_tokens = gr.Slider(
                         minimum=0,
                         maximum=5000,
@@ -318,7 +340,7 @@ def setup_gradio(verbose=False):
                     show_label=False
                     # layout="panel",  # or 'bubble' # [Deprecated]
                 )
-                with gr.Row(visible=True) as submit_row:
+                with gr.Row(visible=True) as submit_row:  # noqa: F841
                     user_prompt = gr.Textbox(
                         show_label=False,
                         placeholder="Enter text and press ENTER",
@@ -328,7 +350,9 @@ def setup_gradio(verbose=False):
                     submit_btn = gr.Button(
                         value="Submit", scale=2, visible=True, variant="primary"
                     )
-                    stop_btn = gr.Button(value="Stop", scale=2, visible=False, variant="stop")
+                    stop_btn = gr.Button(
+                        value="Stop", scale=2, visible=False, variant="stop"
+                    )
                     gr.ClearButton(
                         [chatbot],
                         value="🗑️ Clear history",
