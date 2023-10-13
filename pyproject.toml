@@ -47,11 +47,12 @@ log_format = "%(asctime)s %(levelname)s [%(name)s]: %(message)s"
 log_date_format = "%H:%M:%S"
 
 [tool.flake8]
-# ignore = ['E231', 'E241']
+# Ignore E501 (Line length) because black takes care of it
+ignore = ['W503', 'E231', 'E241', 'E501']
 per-file-ignores = [
     '__init__.py:F401',
 ]
-max-line-length = 100
+max-line-length = 100 # So that it doesnt clash with black (88)
 count = true
 show-source = true
 
