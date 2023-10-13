@@ -69,7 +69,9 @@ class LLMResponse(BaseModel):
         values["response_sequences"] = [""] * values.get("num_sequences", 1)
         return values
 
-    def set_response(self, message: str | List[str], finish_reason: str = "stop"):
+    def set_response(
+        self, message: str | List[str], finish_reason: str = "stop"
+    ) -> None:
         """Set the LLM response message, when the response is not streamed (all at once))"""
 
         self.response_sequences = message if isinstance(message, list) else [message]
@@ -77,7 +79,7 @@ class LLMResponse(BaseModel):
         self.finish_reason = finish_reason
         self.end_time = datetime.now()
 
-    def set_openai_response(self, response: Dict[str, Any]):
+    def set_openai_response(self, response: Dict[str, Any]) -> None:
         """Set the LLM response message, when the response is not streamed (all at once))"""
         choices = response.get("choices", [])
         response_texts = [res["message"]["content"] for res in choices]
@@ -162,7 +164,7 @@ class LLMResponse(BaseModel):
         return self.response_sequences[0] if self.response_sequences else ""
 
     def print_summary(self) -> None:
-        elapsed_time = (self.end_time - self.start_time).total_seconds()
+        elapsed_time = (self.end_time - self.start_time).total_seconds()  # type: ignore[operator]
         response_text = self.get_first_sequence()
         usage = {
             "prompt_tokens": self.prompt_tokens,

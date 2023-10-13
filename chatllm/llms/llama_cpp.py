@@ -5,10 +5,11 @@ import glob
 import os
 from typing import Any, AsyncGenerator, Generator, List, Tuple
 
+from llama_cpp import Llama
+
 from chatllm.llm_response import LLMResponse
 from chatllm.llms.base import BaseLLMProvider, LLMRegister
 from chatllm.prompts import PromptValue
-from llama_cpp import Llama
 
 
 @LLMRegister("llama-cpp")
@@ -48,7 +49,7 @@ class LlamaCpp(BaseLLMProvider):
         tokens = self.llm.tokenize(bytes(prompt, encoding="utf-8"))
         return len(tokens)
 
-    def format_prompt(self, prompt_value: PromptValue) -> Tuple(str, int):
+    def format_prompt(self, prompt_value: PromptValue) -> Tuple[str, int]:
         """Format the prompt and return the number of tokens in the prompt."""
         # formatted_prompt = f"Question: {prompt} Answer: " if prompt else ""
         formatted_prompt = prompt_value.to_string()
