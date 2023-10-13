@@ -181,7 +181,9 @@ class LLMResponse(BaseModel):
             metrics_str = f"    Metrics = {json.dumps(self.extra_info['metrics'])}"
             print(metrics_str)  # noqa: T201
         if self.first_token_time:
-            tkn_gen_time = (self.end_time - self.first_token_time).total_seconds()
+            tkn_gen_time = (
+                self.end_time - self.first_token_time  # type: ignore[operator]
+            ).total_seconds()
             tkn_gen_str = "Time between first token and last token:"  # nosec
             tkn_gen_str = f"{tkn_gen_str} {tkn_gen_time:.03f} secs"
         else:
