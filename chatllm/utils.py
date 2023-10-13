@@ -11,7 +11,7 @@ def set_env(debug=False):
     cur_dir = os.path.abspath(os.getcwd())
     if debug:
         config = dotenv_values(".env")
-        print(f"Current directory = {cur_dir}; Dotenv Values = {config}")
+        print(f"Current directory = {cur_dir}; Dotenv Values = {config}")  # noqa: T201
 
     if os.path.exists(".env"):
         load_dotenv(".env")

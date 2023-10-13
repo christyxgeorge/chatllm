@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import os
-from typing import Any, AsyncGenerator, Generator, List
+from typing import Any, AsyncGenerator, Generator, List, Tuple
 
 import openai
 import tiktoken
+
 from chatllm.llm_response import LLMResponse
 from chatllm.llms.base import BaseLLMProvider, LLMRegister
 from chatllm.prompts import PromptValue
@@ -49,7 +50,7 @@ class OpenAIChat(BaseLLMProvider):
         # print(f"Encoding = {tokens}")
         return len(tokens)
 
-    def format_prompt(self, prompt_value: PromptValue) -> List[dict]:
+    def format_prompt(self, prompt_value: PromptValue) -> Tuple[str, int]:
         """Format the prompt for OpenAI"""
         formatted_prompt = prompt_value.to_messages()
         return formatted_prompt, self.get_token_count(prompt_value.to_string())
