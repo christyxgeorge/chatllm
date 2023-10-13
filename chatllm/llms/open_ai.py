@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, AsyncGenerator, Generator, List, Tuple
+from typing import Any, AsyncGenerator, Dict, List, Tuple
 
 import openai
 import tiktoken
@@ -36,7 +36,7 @@ class OpenAIChat(BaseLLMProvider):
         """Load the model. Nothing to do in the case of OpenAI"""
         pass
 
-    def get_params(self) -> List[str]:
+    def get_params(self) -> Dict[str, object]:
         """Return Parameters supported by the model"""
         return {
             "max_tokens": {"minimum": 0, "maximum": 4096, "default": 128, "step": 64},
@@ -50,7 +50,9 @@ class OpenAIChat(BaseLLMProvider):
         # print(f"Encoding = {tokens}")
         return len(tokens)
 
-    def format_prompt(self, prompt_value: PromptValue) -> Tuple[str, int]:
+    def format_prompt(
+        self, prompt_value: PromptValue
+    ) -> Tuple[list[dict[str, str]], int]:
         """Format the prompt for OpenAI"""
         formatted_prompt = prompt_value.to_messages()
         return formatted_prompt, self.get_token_count(prompt_value.to_string())
@@ -70,7 +72,7 @@ class OpenAIChat(BaseLLMProvider):
         **kwargs: Any,
     ) -> LLMResponse:
         openai_prompt, num_tokens = self.format_prompt(prompt_value)
-        llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)
+        llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)  # type: ignore
 
         kwargs = self.validate_kwargs(**kwargs)
 
@@ -90,10 +92,10 @@ class OpenAIChat(BaseLLMProvider):
         *,
         verbose: bool = False,
         **kwargs: Any,
-    ) -> AsyncGenerator[Any]:
+    ) -> AsyncGenerator[Any | str, Any]:
         """Pass a single prompt value to the model and stream model generations."""
         openai_prompt, num_tokens = self.format_prompt(prompt_value)
-        llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)
+        llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)  # type: ignore
 
         kwargs = self.validate_kwargs(**kwargs)
 
@@ -104,7 +106,7 @@ class OpenAIChat(BaseLLMProvider):
             **kwargs,
         )
 
-        async def async_generator() -> Generator[Any]:
+        async def async_generator() -> AsyncGenerator[Any | str, Any]:
             async for response_delta in stream:
                 llm_response.add_openai_delta(response_delta)
                 yield llm_response

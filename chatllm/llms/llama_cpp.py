@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import glob
 import os
-from typing import Any, AsyncGenerator, Generator, List, Tuple
+from typing import Any, AsyncGenerator, Dict, List, Tuple, cast
 
-from llama_cpp import Llama
+from llama_cpp import CompletionChoice, CompletionChunk, Llama
 
 from chatllm.llm_response import LLMResponse
 from chatllm.llms.base import BaseLLMProvider, LLMRegister
@@ -31,7 +31,7 @@ class LlamaCpp(BaseLLMProvider):
         """
         pass
 
-    def get_params(self) -> List[str]:
+    def get_params(self) -> Dict[str, float | object]:
         """
         Return Parameters supported by the model
         Since we are generating locally, by default, we dont need to limit the tokens
@@ -70,9 +70,9 @@ class LlamaCpp(BaseLLMProvider):
         *,
         verbose: bool = False,
         **kwargs: Any,
-    ) -> LLMResponse:
+    ) -> LLMResponse:  # Generator[LLMResponse, Any, Any]:
         formatted_prompt, num_tokens = self.format_prompt(prompt_value)
-        llm_response = LLMResponse(
+        llm_response = LLMResponse(  # type: ignore
             model=self.model, num_sequences=self.num_sequences, prompt_tokens=num_tokens
         )
         response = self.llm(
@@ -83,9 +83,9 @@ class LlamaCpp(BaseLLMProvider):
             **kwargs,
         )
         # Reformat choices to openai format!
-        for r in response["choices"]:
-            r["message"] = {"role": "assistant", "content": r.pop("text")}
-        llm_response.set_openai_response(response)
+        for r in response["choices"]:  # type: ignore
+            r["message"] = {"role": "assistant", "content": r.pop("text")}  # type: ignore
+        llm_response.set_openai_response(response)  # type: ignore
         return llm_response
 
     async def generate_stream(
@@ -94,10 +94,10 @@ class LlamaCpp(BaseLLMProvider):
         *,
         verbose: bool = False,
         **kwargs: Any,
-    ) -> AsyncGenerator[Any]:
+    ) -> AsyncGenerator[Any | str, Any]:
         """Pass a single prompt value to the model and stream model generations."""
         formatted_prompt, num_tokens = self.format_prompt(prompt_value)
-        llm_response = LLMResponse(
+        llm_response = LLMResponse(  # type: ignore
             model=self.model, num_sequences=self.num_sequences, prompt_tokens=num_tokens
         )
         stream = self.llm(
@@ -108,12 +108,14 @@ class LlamaCpp(BaseLLMProvider):
             **kwargs,
         )
 
-        async def async_generator() -> Generator[Any]:
+        async def async_generator() -> AsyncGenerator[Any | str, Any]:
             for response_delta in stream:
+                response_delta = cast(CompletionChunk, response_delta)
                 # Reformat choices to openai format!
                 for r in response_delta["choices"]:
-                    r["delta"] = {"content": r.pop("text")}
-                llm_response.add_openai_delta(response_delta)
+                    r = cast(CompletionChoice, r)
+                    r["delta"] = {"content": r.pop("text")}  # type: ignore
+                llm_response.add_openai_delta(cast(Dict[str, Any], response_delta))
                 yield llm_response
 
             # Last token [Llama-cpp does not seem to handle 'length']

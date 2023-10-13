@@ -28,9 +28,9 @@ class LLMRegister(object):
 class BaseLLMProvider(ABC):
     """Abstract base class for interfacing with language models."""
 
-    llm_models = {}
+    llm_models: Dict[str, Any] = {}
 
-    def __init__(self, model_name: str, **kwargs) -> None:
+    def __init__(self, model_name: str, **kwargs: Any) -> None:
         self.model_name = model_name
         self.llm_args = kwargs
 
@@ -57,7 +57,7 @@ class BaseLLMProvider(ABC):
         """Load the model."""
 
     @abstractmethod
-    def get_params(self) -> List[str]:
+    def get_params(self) -> Dict[str, float | object]:
         """Return Parameters supported by the model"""
 
     @abstractmethod
@@ -67,16 +67,17 @@ class BaseLLMProvider(ABC):
         *,
         verbose: bool = False,
         **kwargs: Any,
-    ) -> LLMResponse:
+    ) -> LLMResponse:  # Generator[LLMResponse, Any, Any]:
         """Pass a single prompt value to the model and return model generations."""
 
+    @abstractmethod
     async def generate_stream(
         self,
         prompt_value: PromptValue,
         *,
         verbose: bool = False,
         **kwargs: Any,
-    ) -> AsyncGenerator[Any]:
+    ) -> AsyncGenerator[Any | str, Any]:
         """Pass a single prompt value to the model and stream model generations."""
 
     async def generate_batch(
@@ -90,6 +91,5 @@ class BaseLLMProvider(ABC):
         responses = []
         for prompt_value in prompt_values:
             response = await self.generate(prompt_value, verbose=verbose, **kwargs)
-            responses.append(response["choices"][0]["text"])
-
+            responses.append(response.get_first_sequence())
         return responses

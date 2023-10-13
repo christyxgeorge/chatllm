@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, AsyncGenerator, Generator, List
+from typing import Any, AsyncGenerator, Dict, List
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -49,7 +49,7 @@ class HFPipeline(BaseLLMProvider):
         """
         pass
 
-    def get_params(self) -> List[str]:
+    def get_params(self) -> Dict[str, float]:
         """
         Return Parameters supported by the model
         Reference: https://huggingface.co/docs/transformers/main_classes/text_generation
@@ -91,13 +91,10 @@ class HFPipeline(BaseLLMProvider):
         kwargs["pad_token_id"] = self.tokenizer.pad_token_id
 
         # To check multiple sequences
-        num_sequences = kwargs.get("num_sequences", 1)
+        num_sequences = kwargs["num_return_sequences"] = kwargs.pop("num_sequences", 1)
         if num_sequences > 1:
-            logger.info(
-                f"Setting num_beams / num_return_sequences = {self.num_sequences}"
-            )
+            logger.info(f"Setting num_beams / num_return_sequences = {num_sequences}")
             kwargs["num_beams"] = num_sequences
-            kwargs["num_return_sequences"] = num_sequences
         logger.info(f"Validated kwargs = {kwargs}")
         return kwargs
 
@@ -108,7 +105,8 @@ class HFPipeline(BaseLLMProvider):
         verbose: bool = False,
         **kwargs: Any,
     ) -> LLMResponse:
-        llm_response = LLMResponse(model=self.model, num_sequences=self.num_sequences)
+        num_sequences = kwargs.get("num_return_sequences", 1)
+        llm_response = LLMResponse(model=self.model, num_sequences=num_sequences)  # type: ignore
         formatted_prompt = self.format_prompt(prompt_value)
         input_tokens = self.tokenizer.encode(formatted_prompt, return_tensors="pt")
         num_tokens = torch.numel(input_tokens)
@@ -134,7 +132,7 @@ class HFPipeline(BaseLLMProvider):
         *,
         verbose: bool = False,
         **kwargs: Any,
-    ) -> AsyncGenerator[Any]:
+    ) -> AsyncGenerator[Any | str, Any]:
         """
         Pass a single prompt value to the model and stream model generations.
         Streaming not supported for HF models, so we similute a token-by-token async generation
@@ -146,13 +144,14 @@ class HFPipeline(BaseLLMProvider):
         formatted_prompt = self.format_prompt(prompt_value)
         input_tokens = self.tokenizer.encode(formatted_prompt, return_tensors="pt")
         num_tokens = torch.numel(input_tokens)
-        llm_response = LLMResponse(
-            model=self.model, num_sequences=self.num_sequences, prompt_tokens=num_tokens
+        num_sequences = kwargs.get("num_return_sequences", 1)
+        llm_response = LLMResponse(  # type: ignore
+            model=self.model, num_sequences=num_sequences, prompt_tokens=num_tokens
         )
 
         kwargs = self.validate_kwargs(**kwargs)
 
-        async def async_generator() -> Generator[Any]:
+        async def async_generator() -> AsyncGenerator[Any | str, Any]:
             hf_response = self.llm.generate(input_tokens, **kwargs)
             out_tokens = torch.numel(
                 hf_response

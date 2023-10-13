@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, AsyncGenerator, List, Tuple
+from typing import Any, AsyncGenerator, Dict, List, Tuple
 
 import replicate
 import requests
@@ -37,7 +37,7 @@ class ReplicateApi(BaseLLMProvider):
         """
         pass
 
-    def get_params(self) -> List[str]:
+    def get_params(self) -> Dict[str, float | object]:
         """Return Parameters supported by the model"""
         return {
             "max_tokens": 2500,  # max_length
@@ -63,10 +63,10 @@ class ReplicateApi(BaseLLMProvider):
 
     def get_token_count(self, prompt: str) -> int:
         """Return the number of tokens in the prompt."""
-        tokens = []
+        tokens: List[str] = []
         return len(tokens)
 
-    def format_prompt(self, prompt_value: PromptValue) -> Tuple(str, int):
+    def format_prompt(self, prompt_value: PromptValue) -> Tuple[str, int]:
         """Format the prompt for Replicate Predictions: Nothing to be done!"""
         formatted_prompt = prompt_value.to_string()
         return formatted_prompt, self.get_token_count(formatted_prompt)
@@ -97,7 +97,7 @@ class ReplicateApi(BaseLLMProvider):
         **kwargs: Any,
     ) -> LLMResponse:
         formatted_prompt, num_tokens = self.format_prompt(prompt_value)
-        llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)
+        llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)  # type: ignore
         kwargs = self.validate_kwargs(**kwargs)
         input_args = {
             "prompt": formatted_prompt,
@@ -128,10 +128,10 @@ class ReplicateApi(BaseLLMProvider):
         *,
         verbose: bool = False,
         **kwargs: Any,
-    ) -> AsyncGenerator[Any]:
+    ) -> AsyncGenerator[Any | str, Any]:
         """Pass a single prompt value to the model and stream model generations."""
         formatted_prompt, num_tokens = self.format_prompt(prompt_value)
-        llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)
+        llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)  # type: ignore
         kwargs = self.validate_kwargs(**kwargs)
         input_args = {
             "prompt": formatted_prompt,
@@ -150,7 +150,7 @@ class ReplicateApi(BaseLLMProvider):
         )
 
         # Wrap it in an async_generator!
-        async def async_generator():
+        async def async_generator() -> AsyncGenerator[Any | str, Any]:
             iterator = prediction.output_iterator()
             for text_chunk in iterator:
                 llm_response.add_delta(text_chunk)
