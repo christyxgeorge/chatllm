@@ -75,9 +75,7 @@ class ReplicateApi(BaseLLMProvider):
         """Validate the kwargs passed to the model"""
         validated_kwargs = {}
         # Rename max_tokens to max_length
-        kwargs["max_length"] = kwargs.pop(
-            "max_tokens", 2500
-        )  # Rename to max_new_tokens
+        kwargs["max_length"] = kwargs.pop("max_tokens", 2500)
         kwargs["repetition_penalty"] = kwargs.pop("repeat_penalty", 1)
         logger.info(
             f"Supported tokens: {', '.join(k for k in self.input_properties.keys())}"
@@ -104,7 +102,6 @@ class ReplicateApi(BaseLLMProvider):
             # "stop_sequences": stop,
             "debug": verbose,
             "stream": True,
-            "xxxx": 1,  # Just to check the OpenAPI validaton
             **kwargs,
         }
 
@@ -113,9 +110,10 @@ class ReplicateApi(BaseLLMProvider):
 
         out_tokens = 0
         response_text = ""
-        for chunk in iterator:
+        for text_chunk in iterator:
+            # print(f"Chunk = {text_chunk}")
             out_tokens += 1
-            response_text += chunk
+            response_text += text_chunk
 
         llm_response.set_response(response_text, "stop")
         llm_response.set_token_count(num_tokens, out_tokens)
@@ -138,7 +136,6 @@ class ReplicateApi(BaseLLMProvider):
             # "stop_sequences": stop,
             "debug": verbose,
             "stream": True,
-            "xxxx": 1,  # Just to check the validaton
             **kwargs,
         }
 
@@ -153,6 +150,7 @@ class ReplicateApi(BaseLLMProvider):
         async def async_generator() -> AsyncGenerator[Any | str, Any]:
             iterator = prediction.output_iterator()
             for text_chunk in iterator:
+                # print(f"Chunk = {text_chunk}")
                 llm_response.add_delta(text_chunk)
                 yield llm_response
 
