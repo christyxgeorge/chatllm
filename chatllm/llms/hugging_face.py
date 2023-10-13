@@ -49,7 +49,7 @@ class HFPipeline(BaseLLMProvider):
         """
         pass
 
-    def get_params(self) -> Dict[str, float]:
+    def get_params(self) -> Dict[str, float | object]:
         """
         Return Parameters supported by the model
         Reference: https://huggingface.co/docs/transformers/main_classes/text_generation
@@ -106,7 +106,7 @@ class HFPipeline(BaseLLMProvider):
         **kwargs: Any,
     ) -> LLMResponse:
         num_sequences = kwargs.get("num_return_sequences", 1)
-        llm_response = LLMResponse(model=self.model, num_sequences=num_sequences)  # type: ignore
+        llm_response = LLMResponse(model=self.model, num_sequences=num_sequences)
         formatted_prompt = self.format_prompt(prompt_value)
         input_tokens = self.tokenizer.encode(formatted_prompt, return_tensors="pt")
         num_tokens = torch.numel(input_tokens)
@@ -145,7 +145,7 @@ class HFPipeline(BaseLLMProvider):
         input_tokens = self.tokenizer.encode(formatted_prompt, return_tensors="pt")
         num_tokens = torch.numel(input_tokens)
         num_sequences = kwargs.get("num_return_sequences", 1)
-        llm_response = LLMResponse(  # type: ignore
+        llm_response = LLMResponse(
             model=self.model, num_sequences=num_sequences, prompt_tokens=num_tokens
         )
 

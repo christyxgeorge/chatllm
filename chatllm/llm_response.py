@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, model_validator  # type: ignore
+from pydantic import BaseModel, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -14,10 +14,10 @@ logger = logging.getLogger(__name__)
 class LLMResponse(BaseModel):
     """The LLM Response class. (modeled from the OpenAI response)"""
 
-    model: str
+    model: str | None = None
     """The name of the model."""
 
-    unique_id: str
+    unique_id: str | None = None
     """The unique id of the response."""
 
     num_sequences: int = 1

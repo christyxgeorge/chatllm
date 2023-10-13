@@ -5,7 +5,7 @@ import glob
 import os
 from typing import Any, AsyncGenerator, Dict, List, Tuple, cast
 
-from llama_cpp import CompletionChoice, CompletionChunk, Llama
+from llama_cpp import Completion, CompletionChoice, CompletionChunk, Llama
 
 from chatllm.llm_response import LLMResponse
 from chatllm.llms.base import BaseLLMProvider, LLMRegister
@@ -72,7 +72,7 @@ class LlamaCpp(BaseLLMProvider):
         **kwargs: Any,
     ) -> LLMResponse:  # Generator[LLMResponse, Any, Any]:
         formatted_prompt, num_tokens = self.format_prompt(prompt_value)
-        llm_response = LLMResponse(  # type: ignore
+        llm_response = LLMResponse(
             model=self.model, num_sequences=self.num_sequences, prompt_tokens=num_tokens
         )
         response = self.llm(
@@ -83,7 +83,8 @@ class LlamaCpp(BaseLLMProvider):
             **kwargs,
         )
         # Reformat choices to openai format!
-        for r in response["choices"]:  # type: ignore
+        response = cast(Completion, response)
+        for r in response["choices"]:
             r["message"] = {"role": "assistant", "content": r.pop("text")}  # type: ignore
         llm_response.set_openai_response(response)  # type: ignore
         return llm_response
@@ -97,7 +98,7 @@ class LlamaCpp(BaseLLMProvider):
     ) -> AsyncGenerator[Any | str, Any]:
         """Pass a single prompt value to the model and stream model generations."""
         formatted_prompt, num_tokens = self.format_prompt(prompt_value)
-        llm_response = LLMResponse(  # type: ignore
+        llm_response = LLMResponse(
             model=self.model, num_sequences=self.num_sequences, prompt_tokens=num_tokens
         )
         stream = self.llm(

@@ -31,13 +31,13 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def initialize_config(verbose=False, debug=False):
+def initialize_config(verbose=False, debug=False) -> None:
     # ===========================================================================================
     # Logging Setup
     # Django method = logging.config.dictConfig(config)
     # ===========================================================================================
     log_format = "{asctime}.{msecs:03.0f} {levelname} [{name}]: {message}"
-    log_style: Literal["%", "{", "$"] = "{"  # type: ignore
+    log_style: Literal["%", "{", "$"] = "{"
     log_level = logging.DEBUG if debug else (logging.INFO if verbose else logging.WARN)
     logging.basicConfig(
         format=log_format, level=log_level, datefmt="%I:%M:%S", style=log_style

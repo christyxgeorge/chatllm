@@ -97,7 +97,7 @@ class ReplicateApi(BaseLLMProvider):
         **kwargs: Any,
     ) -> LLMResponse:
         formatted_prompt, num_tokens = self.format_prompt(prompt_value)
-        llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)  # type: ignore
+        llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)
         kwargs = self.validate_kwargs(**kwargs)
         input_args = {
             "prompt": formatted_prompt,
@@ -131,7 +131,7 @@ class ReplicateApi(BaseLLMProvider):
     ) -> AsyncGenerator[Any | str, Any]:
         """Pass a single prompt value to the model and stream model generations."""
         formatted_prompt, num_tokens = self.format_prompt(prompt_value)
-        llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)  # type: ignore
+        llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)
         kwargs = self.validate_kwargs(**kwargs)
         input_args = {
             "prompt": formatted_prompt,

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping
 
 from pydantic import BaseModel, Field
 
@@ -29,7 +29,7 @@ class ChatMessage(BaseModel):
     role: ChatRole = ChatRole.USER
     """The role for the message."""
 
-    name: Optional[str] = ""
+    name: str = ""
     """
     The name of the function that was executed.
     [CG: May not be needed if we consistently use additional_kwargs]
@@ -69,7 +69,7 @@ class ChatMessage(BaseModel):
         """Convert Message to Dict"""
         message_dict = {"role": message.role.value, "content": message.content}
         if message.role == ChatRole.FUNCTION:
-            message_dict["name"] = message.name  # type: ignore
+            message_dict["name"] = message.name
         elif message.role == ChatRole.AI:
             if "function_call" in message.additional_kwargs:
                 message_dict["function_call"] = message.additional_kwargs[

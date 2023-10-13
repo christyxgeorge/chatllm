@@ -72,7 +72,7 @@ class OpenAIChat(BaseLLMProvider):
         **kwargs: Any,
     ) -> LLMResponse:
         openai_prompt, num_tokens = self.format_prompt(prompt_value)
-        llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)  # type: ignore
+        llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)
 
         kwargs = self.validate_kwargs(**kwargs)
 
@@ -95,7 +95,7 @@ class OpenAIChat(BaseLLMProvider):
     ) -> AsyncGenerator[Any | str, Any]:
         """Pass a single prompt value to the model and stream model generations."""
         openai_prompt, num_tokens = self.format_prompt(prompt_value)
-        llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)  # type: ignore
+        llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)
 
         kwargs = self.validate_kwargs(**kwargs)
 
