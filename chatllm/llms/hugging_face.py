@@ -2,16 +2,35 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, AsyncGenerator, Dict, List
+from typing import Any, AsyncGenerator, List
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from chatllm.llm_response import LLMResponse
 from chatllm.llms.base import BaseLLMProvider, LLMRegister
+from chatllm.llms.llm_params import (
+    LengthPenalty,
+    LLMConfig,
+    LLMParam,
+    MaxTokens,
+    RepeatPenalty,
+    Temperature,
+)
 from chatllm.prompts import PromptValue
 
 logger = logging.getLogger(__name__)
+
+
+class HuggingFaceConfig(LLMConfig):
+    # Reference: https://huggingface.co/docs/transformers/main_classes/text_generation
+    # Handle parameter variations
+    max_tokens: LLMParam = MaxTokens(name="max_new_tokens")
+    temperature: LLMParam = Temperature(min=0, max=2, default=1)
+    length_penalty: LLMParam = LengthPenalty(min=0, max=2, default=1)
+    repeat_penalty: LLMParam = RepeatPenalty(
+        name="repetition_penalty", min=0, max=2, default=1
+    )
 
 
 @LLMRegister("hf")
@@ -31,16 +50,24 @@ class HFPipeline(BaseLLMProvider):
         logger.info(f"Tokenizer initialized {self.tokenizer}")
 
     @staticmethod
-    def get_supported_models() -> List[str]:
+    def get_supported_models() -> List[LLMConfig]:
         """Return a list of supported models."""
         # TODO: Can load available models in the Local HF Cache ~/cache/huggingface/hub
-        return [
-            "gpt2",
-            "microsoft/phi-1_5",
-            "roneneldan/TinyStories-33M",
-            # "replit/replit-code-v1_5-3b", # Does not work..
-            # "TheBloke/Llama-2-7B-fp16"], # Does not work!
+        model_list: List[LLMConfig] = [
+            HuggingFaceConfig(name="gpt2", desc="OpenAI GPT2"),
+            HuggingFaceConfig(name="microsoft/phi-1_5", desc="Microsoft Phi 1.5"),
+            HuggingFaceConfig(
+                name="roneneldan/TinyStories-33M", desc="Microsoft Tiny Stories"
+            ),
         ]
+        return model_list
+        # return [
+        #     "gpt2",
+        #     "microsoft/phi-1_5",
+        #     "roneneldan/TinyStories-33M",
+        #     # "replit/replit-code-v1_5-3b", # Does not work..
+        #     # "TheBloke/Llama-2-7B-fp16"], # Does not work!
+        # ]
 
     async def load(self, **kwargs: Any) -> None:
         """
@@ -48,21 +75,6 @@ class HFPipeline(BaseLLMProvider):
         as we load the model in the constructor.
         """
         pass
-
-    def get_params(self) -> Dict[str, float | object]:
-        """
-        Return Parameters supported by the model
-        Reference: https://huggingface.co/docs/transformers/main_classes/text_generation
-        """
-
-        return {
-            "max_tokens": 128,
-            "temperature": 1,  # Error if it a small value like 0.1
-            "top_k": 3,
-            "top_p": 0.9,
-            "length_penalty": 1,
-            "num_sequences": 1,
-        }
 
     def get_token_count(self, prompt: str) -> int:
         """
@@ -84,9 +96,10 @@ class HFPipeline(BaseLLMProvider):
 
     def validate_kwargs(self, **kwargs):
         """Validate the kwargs for the model"""
-        kwargs["max_new_tokens"] = kwargs.pop(
-            "max_tokens", 2500
-        )  # Rename to max_new_tokens
+        kwargs["repetition_penalty"] = kwargs.pop("repeat_penalty", 1.0)
+        if "max_tokens" in kwargs:
+            # Rename to max_new_tokens
+            kwargs["max_new_tokens"] = kwargs.pop("max_tokens")
         kwargs["do_sample"] = True
         kwargs["pad_token_id"] = self.tokenizer.pad_token_id
 

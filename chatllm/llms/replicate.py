@@ -3,16 +3,39 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, AsyncGenerator, Dict, List, Tuple
+from typing import Any, AsyncGenerator, List, Tuple
 
 import replicate
 import requests
 
 from chatllm.llm_response import LLMResponse
 from chatllm.llms.base import BaseLLMProvider, LLMRegister
+from chatllm.llms.llm_params import (
+    LengthPenalty,
+    LLMConfig,
+    LLMParam,
+    MaxTokens,
+    NumSequences,
+    RepeatPenalty,
+    Temperature,
+    TopP,
+)
 from chatllm.prompts import PromptValue
 
 logger = logging.getLogger(__name__)
+
+
+class ReplicateConfig(LLMConfig):
+    # Reference: https://replicate.com/meta/llama-2-70b-chat/api
+    # Handle parameter variations
+    max_tokens: LLMParam = MaxTokens(
+        name="max_length", min=0, max=4096, step=64, default=128
+    )
+    temperature: LLMParam = Temperature(min=0, max=2, default=0.75, step=0.05)
+    length_penalty: LLMParam = LengthPenalty(min=0, max=2, default=1)
+    repeat_penalty: LLMParam = RepeatPenalty(min=0, max=2, default=1)
+    top_p: LLMParam = TopP(min=0, max=1, default=0.9, step=0.05)
+    num_sequences: LLMParam = NumSequences(active=False)
 
 
 @LLMRegister("replicate")
@@ -30,36 +53,30 @@ class ReplicateApi(BaseLLMProvider):
         self.llm = model_version
         self.input_properties = {k: v for k, v in properties.items()}
 
-    async def load(self, **kwargs: Any) -> None:
-        """
-        Load the model. Nothing to do in the case of LlamaCpp
-        as we load the model in the constructor.
-        """
-        pass
-
-    def get_params(self) -> Dict[str, float | object]:
-        """Return Parameters supported by the model"""
-        return {
-            "max_tokens": 2500,  # max_length
-            "temperature": 0.8,
-            "top_p": 0.9,
-            "repeat_penalty": 1,  # repetition_penalty
-        }
-
     @staticmethod
-    def get_supported_models() -> List[str]:
+    def get_supported_models() -> List[LLMConfig]:
         """Return a list of supported models."""
         llm_models_url = "https://api.replicate.com/v1/collections/language-models"
         api_key = os.environ.get("REPLICATE_API_TOKEN")
         response = requests.get(
             llm_models_url, timeout=30, headers={"Authorization": f"Token {api_key}"}
         )
+        models: List[LLMConfig] = []
         if response.status_code == 200:
-            models = [f"{x['owner']}/{x['name']}" for x in response.json()["models"]]
+            models = [
+                ReplicateConfig(name=f"{x['owner']}/{x['name']}", desc=x["description"])
+                for x in response.json()["models"]
+            ]
         else:
             logger.info("Unable to get LLM models from Replicate")
-            models = []
         return models
+
+    async def load(self, **kwargs: Any) -> None:
+        """
+        Load the model. Nothing to do in the case of LlamaCpp
+        as we load the model in the constructor.
+        """
+        pass
 
     def get_token_count(self, prompt: str) -> int:
         """Return the number of tokens in the prompt."""

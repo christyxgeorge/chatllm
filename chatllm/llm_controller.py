@@ -4,6 +4,7 @@ import logging
 from typing import Any, AsyncGenerator, List, Optional
 
 from chatllm.llms.base import BaseLLMProvider
+from chatllm.llms.llm_params import LLMConfig
 from chatllm.prompts import (
     ChatMessage,
     ChatPromptValue,
@@ -24,17 +25,18 @@ class LLMController:
         self.model_name = None
         self.llm = None
         self.model_map = BaseLLMProvider.registered_models()
+        self.model_config: LLMConfig | None = None
 
     def get_model_list(self) -> List[str]:
         """return the list of models"""
         models = [
-            f"{llm_key}:{m}"
+            f"{llm_key}:{m.name}"
             for llm_key, llm_info in self.model_map.items()
             for m in llm_info["models"]
         ]
         return models
 
-    def get_provider_model_list(self, provider):
+    def get_provider_model_list(self, provider) -> List[str]:
         """return the list of models for the specified provider"""
         models = [
             f"{llm_key}:{m}"
@@ -54,10 +56,14 @@ class LLMController:
         llm_key, model_name = self.model_name.split(":")
         llm_info = self.model_map.get(llm_key)
         self.llm = llm_info["class"](model_name=model_name)
+        self.model_config = [
+            mcfg for mcfg in llm_info["models"] if mcfg.name == model_name
+        ][0]
         # asyncio.run(self.llm.load())
 
     def get_model_params(self, model_name):
-        return self.llm.get_params()
+        # return self.llm.get_params()
+        return self.model_config.get_params()
 
     def create_prompt_value(
         self, user_query, system_prompt, chat_history=[]

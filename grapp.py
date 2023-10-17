@@ -1,10 +1,11 @@
 """Setup the Gradio App"""
 import logging
-from typing import List
+from typing import Dict, List
 
 import gradio as gr
 
 from chatllm.llm_controller import LLMController
+from chatllm.llms.llm_params import LLMParam
 
 logger = logging.getLogger(__name__)
 
@@ -58,47 +59,43 @@ examples = [
 ]
 
 
-def get_param_values(params, param_name: str, default_value: int | float):
-    if param_name in params and isinstance(params[param_name], dict):
-        value = params[param_name].get("default", default_value)
-        kwargs = {
-            "value": value,
-            "minimum": params[param_name]["minimum"],
-            "maximum": params[param_name]["maximum"],
-            "step": params[param_name]["step"],
-            "visible": param_name in params.keys(),
-        }
+def get_param_values(param: Dict[str, LLMParam]) -> Dict[str, float | int]:
+    if param:
+        kwargs = param.dict(exclude={"name", "active"})  # type: ignore
+        kwargs["info"] = kwargs.pop("description", "")
+        kwargs["value"] = kwargs["default"]
+        kwargs["visible"] = True
+        kwargs.pop("default", None)
     else:
-        value = params.get(param_name, default_value)
         kwargs = {
-            "value": value,
-            "visible": param_name in params.keys(),
+            "value": 0,
+            "visible": False,
         }
     return kwargs
 
 
 def load_demo(model_name, parameters: List[gr.Slider]):
     """Load the Demo"""
-    arg_values = {p.elem_id: p.value for p in parameters}
+    param_keys = [p.elem_id for p in parameters]
     llm_controller.load_model(model_name)
     params = llm_controller.get_model_params(model_name)
-    param_values = {
-        k: get_param_values(params, k, arg_values[k]) for k in arg_values.keys()
-    }
+    param_values = {k: get_param_values(params.get(k, None)) for k in param_keys}
     values = {k: v["value"] for k, v in param_values.items()}
     state = {"stream_mode": True, "model": model_name, "params": values}
     logger.info(f"Loaded Demo: state = {state}")
+    gr_sliders = [gr.Slider(**param_values[pk]) for pk in param_keys]
     return (
         state,
         gr.Dropdown(value=model_name, visible=True),  # Model Dropdown - Make visible
         gr.Accordion(open=True, visible=True),  # parameter_row - Open and visible
-        gr.Slider(**param_values["max_tokens"]),
-        gr.Slider(**param_values["temperature"]),
-        gr.Slider(**param_values["top_p"]),
-        gr.Slider(**param_values["top_k"]),
-        gr.Slider(**param_values["length_penalty"]),
-        gr.Slider(**param_values["repeat_penalty"]),
-        gr.Slider(**param_values["num_sequences"]),
+        *gr_sliders
+        # gr.Slider(**param_values["max_tokens"]),
+        # gr.Slider(**param_values["temperature"]),
+        # gr.Slider(**param_values["top_p"]),
+        # gr.Slider(**param_values["top_k"]),
+        # gr.Slider(**param_values["length_penalty"]),
+        # gr.Slider(**param_values["repeat_penalty"]),
+        # gr.Slider(**param_values["num_sequences"]),
     )
 
 
@@ -114,7 +111,7 @@ def close_parameters() -> gr.Accordion:
 # Event Handlers Implemented
 def model_changed(state: gr.State, model_name: str, parameters: List[gr.Slider]):
     """Handle Model Change"""
-    arg_values = {p.elem_id: p.value for p in parameters}
+    param_keys = [p.elem_id for p in parameters]
     param_values = {k: {"value": v} for k, v in state["params"].items()}
     if model_name != state["model"]:
         """Load Model only if the model has changed"""
@@ -123,7 +120,7 @@ def model_changed(state: gr.State, model_name: str, parameters: List[gr.Slider])
             llm_controller.load_model(model_name)
             params = llm_controller.get_model_params(model_name)
             param_values = {
-                k: get_param_values(params, k, arg_values[k]) for k in arg_values.keys()
+                k: get_param_values(params.get(k, None)) for k in param_keys
             }
             values = {k: v["value"] for k, v in param_values.items()}
             state["params"] = values
@@ -133,18 +130,20 @@ def model_changed(state: gr.State, model_name: str, parameters: List[gr.Slider])
             gr.Info(f"Unable to load model {model_name}... Using {state['model']}")
     else:
         logger.info(f"Model {model_name} has not changed")
+    gr_sliders = [gr.Slider(**param_values[pk]) for pk in param_keys]
     return (
         state,
         state["model"],
         [],  # chatbot - Clear the chat history
         gr.Accordion(open=True, visible=True),  # parameter_row - Open and visible
-        gr.Slider(**param_values["max_tokens"]),
-        gr.Slider(**param_values["temperature"]),
-        gr.Slider(**param_values["top_p"]),
-        gr.Slider(**param_values["top_k"]),
-        gr.Slider(**param_values["length_penalty"]),
-        gr.Slider(**param_values["repeat_penalty"]),
-        gr.Slider(**param_values["num_sequences"]),
+        *gr_sliders
+        # gr.Slider(**param_values["max_tokens"]),
+        # gr.Slider(**param_values["temperature"]),
+        # gr.Slider(**param_values["top_p"]),
+        # gr.Slider(**param_values["top_k"]),
+        # gr.Slider(**param_values["length_penalty"]),
+        # gr.Slider(**param_values["repeat_penalty"]),
+        # gr.Slider(**param_values["num_sequences"]),
     )
 
 
@@ -197,7 +196,7 @@ async def submit_query(state: gr.State, chat_history, system_prompt: str):
     if state["stream_mode"]:
         stream = llm_controller.run_stream(prompt_value=prompt_value, **kwargs)
         # print(f"Stream type = {type(stream)}")
-        async for response_type, response_text in stream:
+        async for response_type, response_text in stream:  # type: ignore
             _handle_response(response_type, response_text, chat_history)
             yield chat_history, gr.Button(visible=False), gr.Button(visible=True)
         # Last yield to restore the submit button
@@ -262,73 +261,13 @@ def setup_gradio(verbose=False):
                 with gr.Accordion(
                     "Parameters", open=False, visible=False
                 ) as parameter_row:
-                    max_tokens = gr.Slider(
-                        minimum=0,
-                        maximum=5000,
-                        value=500,
-                        step=50,
-                        interactive=True,
-                        label="Max output tokens",
-                        info="The maximum numbers of new tokens",
-                        elem_id="max_tokens",
-                    )
-                    temperature = gr.Slider(
-                        minimum=0.01,
-                        maximum=1,
-                        value=0.7,
-                        step=0.1,
-                        interactive=True,
-                        label="Temperature",
-                        info="Higher values produce more diverse outputs",
-                        elem_id="temperature",
-                    )
-                    top_p = gr.Slider(
-                        minimum=0,
-                        maximum=1,
-                        value=1,
-                        step=0.1,
-                        interactive=True,
-                        label="Top p",
-                        info="Alternative to temperature sampling, nucleus sampling",
-                        elem_id="top_p",
-                    )
-                    top_k = gr.Slider(
-                        minimum=1,
-                        maximum=5,
-                        value=3,
-                        step=1,
-                        interactive=True,
-                        label="Top k",
-                        info="Sample from the k most likely next tokens",
-                        elem_id="top_k",
-                    )
-                    length_penalty = gr.Slider(
-                        minimum=1,
-                        maximum=5,
-                        value=3,
-                        step=0.1,
-                        interactive=True,
-                        label="Length Penalty",
-                        elem_id="length_penalty",
-                    )
-                    repeat_penalty = gr.Slider(
-                        minimum=1,
-                        maximum=2,
-                        value=1.1,
-                        step=0.1,
-                        interactive=True,
-                        label="Repeat Penalty",
-                        elem_id="repeat_penalty",
-                    )
-                    num_sequences = gr.Slider(
-                        minimum=1,
-                        maximum=5,
-                        value=1,
-                        step=1,
-                        interactive=True,
-                        label="Generate 'n' Sequences",
-                        elem_id="num_sequences",
-                    )
+                    max_tokens = gr.Slider(elem_id="max_tokens", visible=False)
+                    temperature = gr.Slider(elem_id="temperature", visible=False)
+                    top_p = gr.Slider(elem_id="top_p", visible=False)
+                    top_k = gr.Slider(elem_id="top_k", visible=False)
+                    length_penalty = gr.Slider(elem_id="length_penalty", visible=False)
+                    repeat_penalty = gr.Slider(elem_id="repeat_penalty", visible=False)
+                    num_sequences = gr.Slider(elem_id="num_sequences", visible=False)
 
             with gr.Column(scale=8):
                 chatbot = gr.Chatbot(

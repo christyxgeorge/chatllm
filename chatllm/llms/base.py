@@ -32,7 +32,7 @@ class BaseLLMProvider(ABC):
 
     def __init__(self, model_name: str, **kwargs: Any) -> None:
         self.model_name = model_name
-        self.llm_args = kwargs
+        self.llm_args = kwargs  # TODO: This is currently unused
 
     @property
     def model(self) -> str:
@@ -55,10 +55,6 @@ class BaseLLMProvider(ABC):
     @abstractmethod
     async def load(self, **kwargs: Any) -> None:
         """Load the model."""
-
-    @abstractmethod
-    def get_params(self) -> Dict[str, float | object]:
-        """Return Parameters supported by the model"""
 
     @abstractmethod
     async def generate(

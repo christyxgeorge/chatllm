@@ -95,13 +95,17 @@ class LLMResponse(BaseModel):
         """
         choices = delta.get("choices", [])
         finish_reason = None
-        if choices:
-            has_content = all(["content" in res["delta"] for res in choices])
-            if has_content:
-                response_texts = [res["delta"].get("content", None) for res in choices]
-                self.add_delta(response_texts)
+        has_content = all(["content" in res["delta"] for res in choices])
+        if has_content:
+            if not self.first_token_time:
+                self.first_token_time = datetime.now()
+            for choice in choices:
+                response_index = choice["index"]
+                response_text = choice["delta"].get("content", None)
+                self.response_sequences[response_index] += response_text
 
-        if not has_content:  # Last token!
+            self.completion_tokens += len(choices)  # One token per completion!
+        else:  # Last token [Will be executed once per sequence]
             finish_reasons = [res["finish_reason"] for res in choices]
             finish_reason = "|".join(set(finish_reasons))
             self.add_last_delta(finish_reason=finish_reason)
@@ -111,7 +115,7 @@ class LLMResponse(BaseModel):
         """Add a LLM token to the response, when the response is streamed"""
 
         delta_list = delta if isinstance(delta, list) else [delta]
-        assert self.num_sequences == len(delta_list)  # nosec
+        assert self.num_sequences == len(delta_list), "Sequence Count Mismatch"  # nosec
         if not self.first_token_time:
             self.first_token_time = datetime.now()
 

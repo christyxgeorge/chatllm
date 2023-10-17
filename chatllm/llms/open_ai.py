@@ -2,14 +2,40 @@
 from __future__ import annotations
 
 import os
-from typing import Any, AsyncGenerator, Dict, List, Tuple
+from typing import Any, AsyncGenerator, List, Tuple
 
 import openai
 import tiktoken
 
 from chatllm.llm_response import LLMResponse
 from chatllm.llms.base import BaseLLMProvider, LLMRegister
+from chatllm.llms.llm_params import (
+    LengthPenalty,
+    LLMConfig,
+    LLMParam,
+    NumSequences,
+    RepeatPenalty,
+    Temperature,
+    TopK,
+)
 from chatllm.prompts import PromptValue
+
+
+class OpenAIConfig(LLMConfig):
+    # Handle parameter variations
+    temperature: LLMParam = Temperature(min=0, max=2)
+    num_sequences: LLMParam = NumSequences(name="n")
+    repeat_penalty: LLMParam = RepeatPenalty(
+        min=-2.0,
+        max=-2.0,
+        default=0.0,
+        name="frequency_penalty",
+        label="Frequency Penalty",
+        desc="Positive values penalize new tokens based on their existing frequency in the text so far",
+    )
+    # Unsupported Parameters
+    top_k: LLMParam = TopK(active=False)
+    length_penalty: LLMParam = LengthPenalty(active=False)
 
 
 @LLMRegister("openai")
@@ -22,27 +48,38 @@ class OpenAIChat(BaseLLMProvider):
         self.encoding = tiktoken.encoding_for_model(model_name)
         openai.api_key = os.environ.get("OPENAI_API_KEY")
 
-    @staticmethod
-    def get_supported_models() -> List[str]:
+    @classmethod
+    def get_supported_models(cls) -> List[LLMConfig]:
         """Return a list of supported models."""
         openai.api_key = os.environ.get("OPENAI_API_KEY")
-        model_list = openai.Model.list()
-        model_list = [m["id"] for m in model_list["data"]]
+        # model_list = openai.Model.list()
+        # model_list = [m["id"] for m in model_list["data"]]
         # print(f"Open AI Model List = {len(model_list)} // {model_list}")
-        model_list = [m for m in model_list if m.startswith("gpt")]
-        return ["gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-4", "gpt-3.5-turbo-instruct"]
+        # model_list = [m for m in model_list if m.startswith("gpt")]
+        model_list: List[LLMConfig] = [
+            OpenAIConfig(
+                name="gpt-3.5-turbo", desc="OpenAI GPT-3.5 Turbo", ctx=4096, cpt=0.01
+            ),
+            OpenAIConfig(
+                name="gpt-3.5-turbo-16k",
+                desc="OpenAI GPT-3.5 Turbo",
+                ctx=16384,
+                cpt=0.01,
+            ),
+            OpenAIConfig(name="gpt-4", desc="OpenAI GPT-4", ctx=4096, cpt=0.02),
+            OpenAIConfig(
+                name="gpt-3.5-turbo-instruct",
+                desc="OpenAI GPT-3.5 Turbo Instruct",
+                ctx=4096,
+                cpt=0.005,
+            ),
+        ]
+        # return ["gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-4", "gpt-3.5-turbo-instruct"]
+        return model_list
 
     async def load(self, **kwargs: Any) -> None:
         """Load the model. Nothing to do in the case of OpenAI"""
         pass
-
-    def get_params(self) -> Dict[str, object]:
-        """Return Parameters supported by the model"""
-        return {
-            "max_tokens": {"minimum": 0, "maximum": 4096, "default": 128, "step": 64},
-            "temperature": {"minimum": 0, "maximum": 2, "default": 1, "step": 0.1},
-            "top_p": {"minimum": 0, "maximum": 1, "default": 1, "step": 0.1},
-        }
 
     def get_token_count(self, prompt: str) -> int:
         """Return the number of tokens in the prompt."""
@@ -59,9 +96,9 @@ class OpenAIChat(BaseLLMProvider):
 
     def validate_kwargs(self, **kwargs):
         """Validate the kwargs for the model"""
-        # TODO: Handle these parameters in the UI!
-        # kwargs.setdefault("frequency_penalty", 0.0)
-        # kwargs.setdefault("presence_penalty", 0.6)
+        # Rename 'num_sequences' to 'n', repeat_penalty to freq_penalty
+        kwargs["n"] = kwargs.pop("num_sequences", 1)
+        kwargs["frequency_penalty"] = kwargs.pop("repeat_penalty", 0.0)
         return kwargs
 
     async def generate(
@@ -95,9 +132,12 @@ class OpenAIChat(BaseLLMProvider):
     ) -> AsyncGenerator[Any | str, Any]:
         """Pass a single prompt value to the model and stream model generations."""
         openai_prompt, num_tokens = self.format_prompt(prompt_value)
-        llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)
 
         kwargs = self.validate_kwargs(**kwargs)
+        num_sequences = kwargs.get("n", 1)
+        llm_response = LLMResponse(
+            model=self.model, num_sequences=num_sequences, prompt_tokens=num_tokens
+        )
 
         stream = await self.client.acreate(
             model=self.model_name,
