@@ -1,6 +1,6 @@
 """Setup the Gradio App"""
 import logging
-from typing import Dict, List
+from typing import List
 
 import gradio as gr
 
@@ -19,20 +19,6 @@ TITLE_MARKDOWN = f"""
 <h1 style='text-align: center; color: #e47232'>{title}</h1>
 """
 
-simple_system_prompt = """\
-You are a helpful, respectful and honest assistant. \
-Always answer as helpfully as possible, while being safe.\
-"""
-long_system_prompt = """\
-You are a helpful, respectful and honest assistant. Always answer as helpfully as possible,
-while being safe. Your answers should not include any harmful, unethical, racist, sexist,
-toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased
-and positive in nature.
-
-If a question does not make any sense, or is not factually coherent, explain why instead of
-answering something not correct. If you don't know the answer to a question, please don't share
-false information.
-"""
 
 examples = [
     ["Hello there! How are you doing?"],
@@ -59,43 +45,26 @@ examples = [
 ]
 
 
-def get_param_values(param: Dict[str, LLMParam]) -> Dict[str, float | int]:
-    if param:
-        kwargs = param.dict(exclude={"name", "active"})  # type: ignore
-        kwargs["info"] = kwargs.pop("description", "")
-        kwargs["value"] = kwargs["default"]
-        kwargs["visible"] = True
-        kwargs.pop("default", None)
-    else:
-        kwargs = {
-            "value": 0,
-            "visible": False,
-        }
-    return kwargs
-
-
-def load_demo(model_name, parameters: List[gr.Slider]):
+def load_demo(model_name, parameters: List[gr.Slider], verbose=False):
     """Load the Demo"""
     param_keys = [p.elem_id for p in parameters]
     llm_controller.load_model(model_name)
-    params = llm_controller.get_model_params(model_name)
-    param_values = {k: get_param_values(params.get(k, None)) for k in param_keys}
+    params = llm_controller.get_model_params()
+    param_values = {k: LLMParam.get_param_values(params.get(k)) for k in param_keys}
     values = {k: v["value"] for k, v in param_values.items()}
-    state = {"stream_mode": True, "model": model_name, "params": values}
+    state = {
+        "stream_mode": True,
+        "model": model_name,
+        "params": values,
+        "verbose": verbose,
+    }
     logger.info(f"Loaded Demo: state = {state}")
     gr_sliders = [gr.Slider(**param_values[pk]) for pk in param_keys]
     return (
         state,
         gr.Dropdown(value=model_name, visible=True),  # Model Dropdown - Make visible
         gr.Accordion(open=True, visible=True),  # parameter_row - Open and visible
-        *gr_sliders
-        # gr.Slider(**param_values["max_tokens"]),
-        # gr.Slider(**param_values["temperature"]),
-        # gr.Slider(**param_values["top_p"]),
-        # gr.Slider(**param_values["top_k"]),
-        # gr.Slider(**param_values["length_penalty"]),
-        # gr.Slider(**param_values["repeat_penalty"]),
-        # gr.Slider(**param_values["num_sequences"]),
+        *gr_sliders,
     )
 
 
@@ -118,9 +87,9 @@ def model_changed(state: gr.State, model_name: str, parameters: List[gr.Slider])
         try:
             logger.info(f"Changing model from {state['model']} to {model_name}")
             llm_controller.load_model(model_name)
-            params = llm_controller.get_model_params(model_name)
+            params = llm_controller.get_model_params()
             param_values = {
-                k: get_param_values(params.get(k, None)) for k in param_keys
+                k: LLMParam.get_param_values(params.get(k, None)) for k in param_keys
             }
             values = {k: v["value"] for k, v in param_values.items()}
             state["params"] = values
@@ -136,14 +105,7 @@ def model_changed(state: gr.State, model_name: str, parameters: List[gr.Slider])
         state["model"],
         [],  # chatbot - Clear the chat history
         gr.Accordion(open=True, visible=True),  # parameter_row - Open and visible
-        *gr_sliders
-        # gr.Slider(**param_values["max_tokens"]),
-        # gr.Slider(**param_values["temperature"]),
-        # gr.Slider(**param_values["top_p"]),
-        # gr.Slider(**param_values["top_k"]),
-        # gr.Slider(**param_values["length_penalty"]),
-        # gr.Slider(**param_values["repeat_penalty"]),
-        # gr.Slider(**param_values["num_sequences"]),
+        *gr_sliders,
     )
 
 
@@ -158,6 +120,10 @@ def parameter_changed(state: gr.State, parameter: gr.Slider, value: int | float)
 def mode_changed(state: gr.State, active_mode: str):
     state.update({"stream_mode": active_mode})
     return state
+
+
+def system_prompt_changed(system_prompt: str):
+    llm_controller.set_system_prompt("custom", system_prompt)
 
 
 def vote(data: gr.LikeData):
@@ -185,16 +151,17 @@ def _handle_response(response_type, response_text, chat_history):
         chat_history[-1][1] = response_text
 
 
-async def submit_query(state: gr.State, chat_history, system_prompt: str):
+async def submit_query(state: gr.State, chat_history):
     # Pop out unsupported kwargs
-    params = llm_controller.get_model_params(state["model"])
+    params = llm_controller.get_model_params()
     kwargs = {k: v for k, v in state["params"].items() if k in params}
     user_query = chat_history[-1][0]
-    prompt_value = llm_controller.create_prompt_value(
-        user_query, system_prompt, chat_history
-    )
+    prompt_value = llm_controller.create_prompt_value(user_query, chat_history)
+    verbose = state.get("verbose", False)
     if state["stream_mode"]:
-        stream = llm_controller.run_stream(prompt_value=prompt_value, **kwargs)
+        stream = llm_controller.run_stream(
+            prompt_value=prompt_value, verbose=verbose, **kwargs
+        )
         # print(f"Stream type = {type(stream)}")
         async for response_type, response_text in stream:  # type: ignore
             _handle_response(response_type, response_text, chat_history)
@@ -203,7 +170,7 @@ async def submit_query(state: gr.State, chat_history, system_prompt: str):
         yield chat_history, gr.Button(visible=True), gr.Button(visible=False)
     else:
         response_type, response_text = await llm_controller.run_batch(
-            prompt_value=prompt_value, **kwargs
+            prompt_value=prompt_value, verbose=verbose, **kwargs
         )
         _handle_response(response_type, response_text, chat_history)
         yield chat_history, gr.Button(visible=True), gr.Button(visible=False)
@@ -250,7 +217,7 @@ def setup_gradio(verbose=False):
                         visible=True,
                     )
                     system_prompt = gr.Textbox(
-                        value=simple_system_prompt,  # or long_system_prompt
+                        value=llm_controller.system_prompt,
                         label="System prompt (Optional)",
                         placeholder="Enter the System prompt and place enter",
                         scale=8,
@@ -327,6 +294,11 @@ def setup_gradio(verbose=False):
             inputs=[state, stream_mode],
             outputs=[state],
         )
+        system_prompt.change(
+            system_prompt_changed,
+            inputs=[system_prompt],
+            outputs=[],
+        )
 
         # Parameter Event handlers. Need to separately done!
         max_tokens.change(
@@ -373,7 +345,7 @@ def setup_gradio(verbose=False):
             queue=False,
         ).then(
             submit_query,
-            inputs=[state, chatbot, system_prompt],
+            inputs=[state, chatbot],
             outputs=[chatbot, submit_btn, stop_btn],
         )
         submit_btn.click(
@@ -383,13 +355,13 @@ def setup_gradio(verbose=False):
             queue=False,
         ).then(
             submit_query,
-            inputs=[state, chatbot, system_prompt],
+            inputs=[state, chatbot],
             outputs=[chatbot, submit_btn, stop_btn],
         )
         stop_btn.click(stop_btn_clicked, [], outputs=[submit_btn, stop_btn])
 
         demo.load(
-            lambda x, *params: load_demo(x, parameters),
+            lambda x, *params: load_demo(x, parameters, verbose=verbose),
             [model_dropdown, *parameters],
             [state, model_dropdown, parameter_row, *parameters],
         )

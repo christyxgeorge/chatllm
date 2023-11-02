@@ -40,7 +40,7 @@ class OpenAIConfig(LLMConfig):
 
 @LLMRegister("openai")
 class OpenAIChat(BaseLLMProvider):
-    """Abstract base class for interfacing with language models."""
+    """Abstract base class for interfacing with OpenAI language models."""
 
     def __init__(self, model_name: str, **kwargs) -> None:
         super().__init__(model_name, **kwargs)
@@ -69,7 +69,7 @@ class OpenAIChat(BaseLLMProvider):
             OpenAIConfig(name="gpt-4", desc="OpenAI GPT-4", ctx=4096, cpt=0.02),
             OpenAIConfig(
                 name="gpt-3.5-turbo-instruct",
-                desc="OpenAI GPT-3.5 Turbo Instruct",
+                desc="OpenAI GPT-3.5 Turbo Instruct / Davinci",
                 ctx=4096,
                 cpt=0.005,
             ),
@@ -109,16 +109,15 @@ class OpenAIChat(BaseLLMProvider):
         **kwargs: Any,
     ) -> LLMResponse:
         openai_prompt, num_tokens = self.format_prompt(prompt_value)
+        validated_kwargs = self.validate_kwargs(**kwargs)
         llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)
-
-        kwargs = self.validate_kwargs(**kwargs)
 
         # TODO: Need to support tenacity to retry errors!
         response = await self.client.acreate(
             model=self.model_name,
             messages=openai_prompt,
             stream=False,
-            **kwargs,
+            **validated_kwargs,
         )
         llm_response.set_openai_response(response)
         return llm_response
@@ -132,8 +131,7 @@ class OpenAIChat(BaseLLMProvider):
     ) -> AsyncGenerator[Any | str, Any]:
         """Pass a single prompt value to the model and stream model generations."""
         openai_prompt, num_tokens = self.format_prompt(prompt_value)
-
-        kwargs = self.validate_kwargs(**kwargs)
+        validated_kwargs = self.validate_kwargs(**kwargs)
         num_sequences = kwargs.get("n", 1)
         llm_response = LLMResponse(
             model=self.model, num_sequences=num_sequences, prompt_tokens=num_tokens
@@ -143,7 +141,7 @@ class OpenAIChat(BaseLLMProvider):
             model=self.model_name,
             messages=openai_prompt,
             stream=True,
-            **kwargs,
+            **validated_kwargs,
         )
 
         async def async_generator() -> AsyncGenerator[Any | str, Any]:

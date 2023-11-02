@@ -4,7 +4,7 @@ import json
 import logging
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from pydantic import BaseModel, model_validator
 
@@ -36,7 +36,7 @@ class LLMResponse(BaseModel):
     Usage as returned by the API
     """
 
-    finish_reason: Optional[str] = None
+    finish_reasons: Set[str] = set()
     """
     The completion reason for the response.
     One of 'stop', 'length', 'function' or 'error'
@@ -59,7 +59,7 @@ class LLMResponse(BaseModel):
     """Any extra info returned from the API (like metrics)"""
 
     response_sequences: List[str] = []
-    last_tokens: List[str] = []
+    last_tokens: List[str] = [""] * num_sequences
 
     @model_validator(mode="before")
     def set_default_values(cls, values: Dict[str, Any]) -> Dict[str, Any]:
@@ -70,13 +70,13 @@ class LLMResponse(BaseModel):
         return values
 
     def set_response(
-        self, message: str | List[str], finish_reason: str = "stop"
+        self, message: str | List[str], finish_reasons: List[str] = ["stop"]
     ) -> None:
         """Set the LLM response message, when the response is not streamed (all at once))"""
 
         self.response_sequences = message if isinstance(message, list) else [message]
         assert self.num_sequences == len(self.response_sequences)  # nosec
-        self.finish_reason = finish_reason
+        self.finish_reasons |= set(finish_reasons)
         self.end_time = datetime.now()
 
     def set_openai_response(self, response: Dict[str, Any]) -> None:
@@ -84,8 +84,7 @@ class LLMResponse(BaseModel):
         choices = response.get("choices", [])
         response_texts = [res["message"]["content"] for res in choices]
         finish_reasons = [res["finish_reason"] for res in choices]
-        finish_reason = finish_reasons[0] if finish_reasons else None
-        self.set_response(response_texts, finish_reason)
+        self.set_response(response_texts, finish_reasons=finish_reasons)
         self.set_api_usage(response["usage"])
 
     def add_openai_delta(self, delta: Dict[str, Any]) -> None:
@@ -94,7 +93,6 @@ class LLMResponse(BaseModel):
         (OpenAI response format)
         """
         choices = delta.get("choices", [])
-        finish_reason = None
         has_content = all(["content" in res["delta"] for res in choices])
         if has_content:
             if not self.first_token_time:
@@ -103,12 +101,12 @@ class LLMResponse(BaseModel):
                 response_index = choice["index"]
                 response_text = choice["delta"].get("content", None)
                 self.response_sequences[response_index] += response_text
+                self.last_tokens[response_index] = response_text
 
             self.completion_tokens += len(choices)  # One token per completion!
         else:  # Last token [Will be executed once per sequence]
             finish_reasons = [res["finish_reason"] for res in choices]
-            finish_reason = "|".join(set(finish_reasons))
-            self.add_last_delta(finish_reason=finish_reason)
+            self.add_last_delta(finish_reasons=finish_reasons)
             self.set_api_usage(delta.get("usage", {}))
 
     def add_delta(self, delta: str | List[str]) -> None:
@@ -125,14 +123,13 @@ class LLMResponse(BaseModel):
 
         self.completion_tokens += len(delta_list)  # One token per completion!
 
-    def add_last_delta(self, finish_reason="stop") -> None:
+    def add_last_delta(self, finish_reasons=["stop"]) -> None:
         """
         Add the last token, when the response is streamed.
         This is to ensure that the finish_reason is propagated back!
         """
         self.end_time = datetime.now()
-        if finish_reason:
-            self.finish_reason = finish_reason
+        self.finish_reasons |= set(finish_reasons)
 
     def set_token_count(self, prompt_count, completion_count) -> None:
         if self.prompt_tokens > 0 and self.prompt_tokens != prompt_count:
@@ -180,7 +177,8 @@ class LLMResponse(BaseModel):
         print(f"    Computed Usage = {json.dumps(usage or {})}")  # noqa: T201
         if self.api_usage:
             print(f"    API Usage = {json.dumps(self.api_usage)}")  # noqa: T201
-        print(f"    Stop Reason = {self.finish_reason or 'n/a'}")  # noqa: T201
+        finish_reasons = "|".join(self.finish_reasons) if self.finish_reasons else "n/a"
+        print(f"    Stop Reason = {finish_reasons}")  # noqa: T201
         if "metrics" in self.extra_info:
             metrics_str = f"    Metrics = {json.dumps(self.extra_info['metrics'])}"
             print(metrics_str)  # noqa: T201

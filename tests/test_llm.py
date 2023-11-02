@@ -77,10 +77,8 @@ class TestLLMGeneration:
         prompt_value = llm_controller.create_prompt_value(
             prompt, SYSTEM_PROMPT, chat_history=[]
         )
-        params = llm_controller.get_model_params(model_name)
-        llm_kwargs = {
-            k: (v["default"] if isinstance(v, dict) else v) for k, v in params.items()
-        }
+        params = llm_controller.get_model_params()
+        llm_kwargs = {k: v.default for k, v in params.items()}
         llm_kwargs.update(kwargs)
         return llm_controller, prompt_value, llm_kwargs
 

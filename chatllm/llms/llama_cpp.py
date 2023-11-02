@@ -47,7 +47,7 @@ class LlamaCpp(BaseLLMProvider):
         model_dir = os.environ["CHATLLM_ROOT"] + "/models"
         model_path = f"{model_dir}/{model_name}"
         # Note: Default context in llama-cpp is 512!
-        self.llm = Llama(model_path=model_path, n_ctx=2048)
+        self.llm = Llama(model_path=model_path, n_ctx=2048, verbose=False)
         self.num_sequences = 1
 
     @staticmethod
@@ -82,9 +82,7 @@ class LlamaCpp(BaseLLMProvider):
 
     def validate_kwargs(self, **kwargs):
         """Validate the kwargs passed to the model"""
-        # Rename max_tokens to max_length
-        kwargs["max_length"] = kwargs.pop("max_tokens", 2500)
-        kwargs["repetition_penalty"] = kwargs.pop("repeat_penalty", 1)
+        # Nothing to be done
         return kwargs
 
     async def generate(
@@ -95,6 +93,7 @@ class LlamaCpp(BaseLLMProvider):
         **kwargs: Any,
     ) -> LLMResponse:  # Generator[LLMResponse, Any, Any]:
         formatted_prompt, num_tokens = self.format_prompt(prompt_value)
+        validated_kwargs = self.validate_kwargs(**kwargs)
         llm_response = LLMResponse(
             model=self.model, num_sequences=self.num_sequences, prompt_tokens=num_tokens
         )
@@ -103,7 +102,7 @@ class LlamaCpp(BaseLLMProvider):
             # stop=["Question:"],
             stream=False,  # Dont stream the response
             echo=False,  # Dont echo the prompt
-            **kwargs,
+            **validated_kwargs,
         )
         # Reformat choices to openai format!
         response = cast(Completion, response)
@@ -121,6 +120,7 @@ class LlamaCpp(BaseLLMProvider):
     ) -> AsyncGenerator[Any | str, Any]:
         """Pass a single prompt value to the model and stream model generations."""
         formatted_prompt, num_tokens = self.format_prompt(prompt_value)
+        validated_kwargs = self.validate_kwargs(**kwargs)
         llm_response = LLMResponse(
             model=self.model, num_sequences=self.num_sequences, prompt_tokens=num_tokens
         )
@@ -129,7 +129,7 @@ class LlamaCpp(BaseLLMProvider):
             # stop=["Question:"],
             stream=True,  # Stream the response
             echo=False,  # Dont echo the prompt
-            **kwargs,
+            **validated_kwargs,
         )
 
         async def async_generator() -> AsyncGenerator[Any | str, Any]:
@@ -148,7 +148,7 @@ class LlamaCpp(BaseLLMProvider):
             else:
                 finish_reason = "stop"
 
-            llm_response.add_last_delta(finish_reason=finish_reason)
+            llm_response.add_last_delta(finish_reasons=[finish_reason])
             yield llm_response
 
         return async_generator()

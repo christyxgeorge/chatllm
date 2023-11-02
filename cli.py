@@ -2,8 +2,9 @@
 import asyncio
 import os
 import re
+import textwrap
 import time
-from typing import Any, Dict, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Tuple
 
 import click
 from click_repl import repl
@@ -16,11 +17,13 @@ from prompt_toolkit.history import FileHistory  # , InMemoryHistory
 from chatllm.prompts.prompt_value import PromptValue
 from chatllm.utils import set_env
 
-DEFAULT_TEMPERATURE = 0.75
+if TYPE_CHECKING:
+    from chatllm.llm_controller import LLMController
+
 MODEL_INFO: "Dict[str, str]" = {
     "g35": "openai:gpt-3.5-turbo",
     "g4": "openai:gpt-4",
-    "dv": "openai:davinci",
+    "dv": "openai:gpt-3.5-turbo-instruct",
     "lc7b": "llama-cpp:llama-2-7b-chat.Q5_K_M.gguf",
     "m7b": "llama-cpp:mistral-7b-openorca.Q5_K_M.gguf",
     "l7b": "replicate:replicate/llama-7b",
@@ -31,6 +34,8 @@ MODEL_INFO: "Dict[str, str]" = {
     "p15": "microsoft/phi-1_5",
     "ts": "hf:roneneldan/TinyStories-33M",
     "rcode": "hf:replit/replit-code-v1_5-3b",
+    "cp": "vertexai:chat-bison",
+    "tp": "vertexai:text-bison",
 }
 
 
@@ -58,29 +63,32 @@ def normalize_token(token_name: str) -> str:
 class ChatLLMContext(object):
     """Chat Context"""
 
-    def __init__(self, model_key, *, temperature=None, verbose=False):
+    def __init__(self, model_key, *, verbose=False):
         self.verbose = verbose
         self.mode = "batch"
-        self.model_name = MODEL_INFO[model_key]
-        self.vars = {"temperature": DEFAULT_TEMPERATURE, "max_tokens": 100}
         self.llm_controller = self._initialize_llm_controller()
+        self.set_model(model_key)
 
-    def _initialize_llm_controller(self):
+    def _initialize_llm_controller(self) -> "LLMController":
         from chatllm.llm_controller import LLMController
 
         llm_controller = LLMController()
-        llm_controller.load_model(self.model_name)
         return llm_controller
 
     def set_model(self, model_key):
         self.model_name = MODEL_INFO[model_key]
         self.llm_controller.load_model(self.model_name)
+        self.params = self.llm_controller.get_model_params()
+        self.vars = {k: v.default for k, v in self.params.items()}
 
-    def add_key(self, key: str, val: Any) -> None:
-        """Add Variable reference"""
-        self.vars[key] = val
+    def set(self, key: str, val: float | int) -> None:
+        """Set Parameter by key/value"""
+        if key in self.vars:
+            self.vars[key] = val
+        else:
+            click.echo(f"Invalid Variable: {key}, Valid Options are {self.vars.keys()}")
 
-    def get_key(self, key: str) -> Any:
+    def get(self, key: str) -> Any:
         """Add Variable reference"""
         return self.vars.get(key)
 
@@ -88,7 +96,7 @@ class ChatLLMContext(object):
         self, prompt_value: PromptValue, **llm_kwargs
     ) -> Tuple[str, str]:
         stream = self.llm_controller.run_stream(
-            prompt_value, word_by_word=True, **llm_kwargs
+            prompt_value, verbose=self.verbose, word_by_word=True, **llm_kwargs
         )
         click.echo("Response: ", nl=False)
         async for response_type, response_text in stream:
@@ -106,13 +114,8 @@ class ChatLLMContext(object):
         try:
             start_time = time.time()
             if model_key and self.model_name != MODEL_INFO[model_key]:
-                self.model_name = MODEL_INFO[model_key]
-                self.llm_controller.load_model(self.model_name)
-            params = self.llm_controller.get_model_params(self.model_name)
-            llm_kwargs = {
-                k: (v["default"] if isinstance(v, dict) else v)
-                for k, v in params.items()
-            }
+                self.set_model(model_key)
+            llm_kwargs = {k: v.default for k, v in self.params.items()}
             llm_kwargs.update(**self.vars)  # Update with the current variables
             llm_kwargs.update(
                 **kwargs
@@ -127,7 +130,9 @@ class ChatLLMContext(object):
                 )
             else:
                 response_type, response = asyncio.run(
-                    self.llm_controller.run_batch(prompt_value, **llm_kwargs)
+                    self.llm_controller.run_batch(
+                        prompt_value, verbose=self.verbose, **llm_kwargs
+                    )
                 )
                 click.echo(f"Response [{response_type}]:\n{response.strip()}")
             time_taken = time.time() - start_time
@@ -138,15 +143,46 @@ class ChatLLMContext(object):
             click.echo(msg)
             return msg
 
+    def show_model_info(self) -> None:
+        click.echo(Fore.GREEN + Style.BRIGHT + "Available Models:")
+        for mkey, mname in MODEL_INFO.items():
+            if mname == self.model_name:
+                click.echo(Fore.RED + f" ** {mkey}: {mname} ==> Active" + Fore.GREEN)
+            else:
+                click.echo(f"    {mkey}: {mname}")
+        click.echo(Style.RESET_ALL)
+
+    def show_params(self) -> None:
+        for pkey, pval in self.params.items():
+            click.echo(Fore.RED + f"{pkey}: {self.vars.get(pkey, 'N/A')}" + Fore.RESET)
+            click.echo(
+                Fore.CYAN + f"    {pval.label} [{pval.description}]" + Fore.RESET
+            )
+            click.echo(
+                f"    Min: {pval.minimum}, Max: {pval.maximum}, Default: {pval.default}"
+            )
+
+    def show_system_prompts(self) -> None:
+        click.echo("\nSystem Prompts:\n")
+        system_prompts = self.llm_controller.get_system_prompt_list()
+        for ptype, prompt in system_prompts.items():
+            active = "**" if ptype == self.llm_controller.system_prompt_type else "  "
+            prompt = "\n".join(textwrap.wrap(prompt, subsequent_indent="    "))
+            if ptype == self.llm_controller.system_prompt_type:
+                click.echo(Fore.RED + f" {active} {ptype}: {prompt}\n" + Fore.RESET)
+            else:
+                click.echo(f" {active} {ptype}: {prompt}\n")
+
     def show_context_info(self) -> None:
         """Show the key ChatLLM variables"""
         click.echo("\n")
         click.echo(
             Fore.CYAN
             + Style.BRIGHT
-            + f"[Context] Model = {self.model_name} Mode: [{self.mode}], "
-            + f"Arguments = {self.vars}, "
-            + f"Verbose = {self.verbose}\n"
+            + "[Context]\n"
+            + f"    Model = {self.model_name} [Mode: {self.mode}],\n"
+            + f"    Parameters = {self.vars},\n"
+            + f"    Verbose = {self.verbose}\n"
             + Style.RESET_ALL
         )
         click.echo("\n")
@@ -170,19 +206,21 @@ class ChatLLMContext(object):
     default="g35",
     type=click.Choice([k for k in MODEL_INFO.keys()]),
     help="LLM Model [default: g35 => gpt-3.5-turbo]",
-    show_choices=True,
+    # show_choices=True,
 )
-@click.option("-t", "--temperature", type=float, help="LLM Temperature")
-def cli(ctx, model_key, temperature, verbose):
+def cli(ctx, model_key, verbose):
     """The ChatLLM Shell"""
+
     if not ctx.obj:
+        for command in llm_group.list_commands(ctx):
+            cli.add_command(LLM(name=command))
         # Add the context only the first time!
-        ctx.obj = ChatLLMContext(model_key, temperature=temperature, verbose=verbose)
+        ctx.obj = ChatLLMContext(model_key, verbose=verbose)
 
 
 @cli.command()
 @click.pass_context
-def help(ctx):  # pylint: disable=redefined-builtin
+def help(ctx) -> None:  # pylint: disable=redefined-builtin
     """Print Help String"""
     click.echo(ctx.parent.get_help())
     ctx.obj.show_context_info()
@@ -198,7 +236,7 @@ def shell_start(obj, verbose, debug):
     click.echo(
         Fore.CYAN
         + Style.BRIGHT
-        + "Run ':help' for help information, or ':quit' to quit."
+        + "Use 'help' for help information, or ':quit'/exit to quit."
         + Style.RESET_ALL
     )
     obj.verbose = verbose
@@ -206,8 +244,7 @@ def shell_start(obj, verbose, debug):
 
     # Initialize the REPL
     def prompt_continuation(_width, _line_number, _is_soft_wrap):
-        return "." * 3 + " "
-        # Or: return [('', '.' * width)]
+        return "." * 3 + " "  # or: return [('', '.' * width)]
 
     @Condition
     def check_multiline() -> bool:
@@ -223,7 +260,7 @@ def shell_start(obj, verbose, debug):
             "message": "ChatLLM > ",
             "multiline": check_multiline,
             "prompt_continuation": prompt_continuation,
-            "history": FileHistory(f"{cur_dir}/.chatllm-history"),
+            "history": FileHistory(f"{cur_dir}/.chatllm-cli-history"),
         },
     )
 
@@ -237,50 +274,6 @@ def shell_exit():
 # ===========================================================================================
 # Commands to Get/Set Context Variables
 # ===========================================================================================
-
-
-@cli.command(
-    name="set",
-    context_settings=dict(
-        ignore_unknown_options=True,
-        allow_extra_args=True,
-    ),
-)
-@click.pass_obj
-def set_var(obj):
-    """
-    Sets Multiple Variables to send to the LLM.
-    Needs pairs of strings.
-    NOTE: Boolean variables or Multiple options can introduce issues!
-          Boolean: -x -y -z --> Will create {x: y}
-          Multiple: -x a b -y --> Will create { x: a, b: y}
-    TODO: Can use argparse.parse(shlex.split()) to handle quotes in arguments as well!
-    """
-    ctx = click.get_current_context()
-    click.echo(f"Arg Vars = {ctx.args}")
-    arg_vars = [sub.lstrip("-") for item in ctx.args for sub in item.split("=")]
-    arg_dict = dict(zip(arg_vars[::2], arg_vars[1::2]))
-    click.echo(f"Variables: {arg_dict}")
-    for key, value in arg_dict.items():
-        obj.add_key(key, value)
-
-
-@cli.command(name="get")
-@click.pass_obj
-@click.argument("var", required=True)
-def get_var(obj, var):
-    """Get the Variable"""
-    click.echo(f"Variable: {obj.get(var)}")
-
-
-@cli.command(name="vars")
-@click.pass_obj
-def list_vars(obj) -> None:
-    """List the Variables that will be sent to the LLM"""
-    var_list = obj.vars
-    click.echo(f"Variables: {var_list}")
-
-
 @cli.command(name="verbose")
 @click.pass_obj
 def toggle_verbose(obj):
@@ -291,10 +284,12 @@ def toggle_verbose(obj):
 
 @cli.command(name="model")
 @click.pass_obj
-@click.argument("model_key", default="l7b")
+@click.argument("model_key", default="null")
 def model_key(obj, model_key):
-    """Set Model temperature"""
-    if model_key in MODEL_INFO:
+    """List Models/Set Model"""
+    if model_key == "null":
+        obj.show_model_info()
+    elif model_key in MODEL_INFO:
         obj.set_model(model_key)
         obj.show_context_info()
     else:
@@ -306,7 +301,7 @@ def model_key(obj, model_key):
 @cli.command(name="mode")
 @click.pass_obj
 @click.argument("mode", default="batch")
-def llm_mode(obj, mode):
+def llm_mode(obj, mode) -> None:
     """Set Model mode ('stream' or 'batch')"""
     if mode.startswith("stream"):
         obj.mode = "stream"
@@ -318,13 +313,48 @@ def llm_mode(obj, mode):
         click.echo(f"Invalid Mode: {mode}, Valid Options are 'stream' or 'batch'")
 
 
-@cli.command(name="temperature")
+@cli.command(
+    name="vars",
+    context_settings=dict(
+        ignore_unknown_options=True,
+        allow_extra_args=True,
+    ),
+)
 @click.pass_obj
-@click.argument("temperature", default=DEFAULT_TEMPERATURE, type=float)
-def model_temperature(obj, temperature):
-    """Set Model temperature"""
-    obj.add_key("temperature", temperature)
-    obj.show_context_info()
+def set_var(obj) -> None:
+    """
+    Simple way to list / set multiple Parameters to send to the LLM.
+    Usage: set a=b c=d e=f,g h ## e has multiple values and h is boolean
+    TODO: Can use argparse.parse(shlex.split()) to handle quotes in arguments as well!
+    """
+    ctx = click.get_current_context()
+    if not ctx.args:
+        obj.show_params()
+    else:
+        arg_vars = [
+            item.split("=") if "=" in item else [item, "true"] for item in ctx.args
+        ]
+        for key, value in arg_vars:
+            obj.set(key, value)
+        obj.show_context_info()
+
+
+@cli.command(name="sprompt")
+@click.pass_obj
+@click.argument("prompt_type", default="null")
+def set_system_prompt(obj, prompt_type):
+    """
+    Simple way to list / show system prompts.
+    """
+    if prompt_type == "null":
+        obj.show_system_prompts()
+    elif prompt_type in ["simple", "long", "none"]:
+        obj.llm_controller.set_system_prompt(prompt_type, "")
+        obj.show_system_prompts()
+    else:
+        click.echo(
+            f"Invalid Prompt Type: {prompt_type}, Valid Options are 'simple', 'long' or 'none'"
+        )
 
 
 # ===========================================================================================
@@ -332,94 +362,62 @@ def model_temperature(obj, temperature):
 # ===========================================================================================
 
 
-@cli.command()
-@click.pass_obj
-@click.argument(
-    "prompt", required=True
-)  # prompt="Enter Query", help="The Query for LLAMA-2")
-@click.option(
-    "-t",
-    "--temperature",
-    default=DEFAULT_TEMPERATURE,
-    type=float,
-    help="LLM Temperature",
-    show_default=True,
+@cli.command(
+    name="q",
+    context_settings=dict(
+        ignore_unknown_options=True,
+        allow_extra_args=True,
+    ),
 )
-def vicuna(obj, prompt: str, temperature: float):
-    """Sends the user query to the Vicuna LLM on Replicate"""
-    return obj.llm_run(prompt, "vicuna", temperature=temperature)
-
-
-@cli.command()
 @click.pass_obj
-@click.argument(
-    "prompt", required=True
-)  # prompt="Enter Query", help="The Query for GPT-4")
-@click.option(
-    "-t",
-    "--temperature",
-    default=DEFAULT_TEMPERATURE,
-    type=float,
-    help="LLM Temperature",
-    show_default=True,
-)
-def gpt4(obj, prompt: str, temperature: float):
-    """Sends the user query to OpenAI GPT 4"""
-    return obj.llm_run(prompt, "g4", temperature=temperature)
+def run_query(obj) -> None:
+    """
+    Run the given query on the current active model
+    """
+    ctx = click.get_current_context()
+    if not ctx.args:
+        obj.show_params()
+    else:
+        prompt = " ".join(ctx.args)
+        click.echo(f"Invoked Active LLM [{obj.model_name}] with prompt, {prompt}")
+        return obj.llm_run(prompt)
 
 
-@cli.command()
-@click.pass_obj
-@click.argument(
-    "prompt", required=True
-)  # prompt="Enter Query", help="The Query for GPT-4")
-@click.option(
-    "-t",
-    "--temperature",
-    default=0.2,
-    type=float,
-    help="LLM Temperature",
-    show_default=True,
-)
-def gpt(obj, prompt: str, temperature: float):
-    """Sends the user query to OpenAI GPT 3.5"""
-    return obj.llm_run(prompt, "g35", temperature=temperature)
+class LLMGroup(click.MultiCommand):
+    def list_commands(self, ctx) -> List[str]:
+        return list(MODEL_INFO.keys())
+
+    def get_command(self, ctx, name):
+        return LLM(name=name)
 
 
-@cli.command()
-@click.pass_obj
-@click.argument(
-    "prompt", required=True
-)  # prompt="Enter Query", help="The Query for GPT-4")
-@click.option(
-    "-t",
-    "--temperature",
-    default=0.2,
-    type=float,
-    help="LLM Temperature",
-    show_default=True,
-)
-def davinci(obj, prompt: str, temperature: float):
-    """Sends the user query to OpenAI Davinci"""
-    return obj.llm_run(prompt, "dv", temperature=temperature)
+class LLM(click.Command):
+    """Invoke LLM with the specified model"""
+
+    def __init__(self, name):
+        super().__init__(name)
+        self.allow_extra_args = True
+        self.ignore_unknown_options = True
+        self.help = f"Run {MODEL_INFO.get(self.name)}"
+
+    def invoke(self, ctx) -> None:
+        """Invoke LLM"""
+        # NOTE: This can be made into a decorated function as well
+        if not ctx.args:
+            click.echo(f"No Prompt Specified, Changing active model to {self.name}")
+            ctx.obj.set_model(self.name)
+        else:
+            prompt = " ".join(ctx.args)
+            click.echo(
+                f"Invoked LLM [{ctx.obj.model_name}] with prompt, {prompt} / {self.name}"
+            )
+            return ctx.obj.llm_run(prompt, self.name)
 
 
-@cli.command()
-@click.pass_obj
-@click.argument(
-    "prompt", required=True
-)  # prompt="Enter Query", help="The Query for GPT-4")
-@click.option(
-    "-t",
-    "--temperature",
-    default=DEFAULT_TEMPERATURE,
-    type=float,
-    help="LLM Temperature",
-    show_default=True,
-)
-def llm(obj, prompt: str, temperature: float):
-    """Sends the user query to the currently selected LLM"""
-    return obj.llm_run(prompt, temperature=temperature)
+@click.command(cls=LLMGroup)
+def llm_group():
+    """LLM Commands"""
+    pass
 
 
 # ===========================================================================================

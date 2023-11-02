@@ -165,4 +165,5 @@ cython_debug/
 .env
 .history/
 gradio_cached_examples/
-.chatllm-history
+.chatllm*history
+models/

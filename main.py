@@ -49,7 +49,7 @@ def gradio_app(args):
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        demo = setup_gradio()
+        demo = setup_gradio(verbose=args.verbose)
 
     # Launch Gradio App with Queuing to support streaming!
     demo.queue(

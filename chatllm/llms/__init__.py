@@ -3,3 +3,4 @@ from .hugging_face import HFPipeline
 from .llama_cpp import LlamaCpp
 from .open_ai import OpenAIChat
 from .replicate import ReplicateApi
+from .vertexai import VertexApi

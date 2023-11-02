@@ -119,14 +119,13 @@ class HFPipeline(BaseLLMProvider):
         **kwargs: Any,
     ) -> LLMResponse:
         num_sequences = kwargs.get("num_return_sequences", 1)
+        validated_kwargs = self.validate_kwargs(**kwargs)
         llm_response = LLMResponse(model=self.model, num_sequences=num_sequences)
         formatted_prompt = self.format_prompt(prompt_value)
         input_tokens = self.tokenizer.encode(formatted_prompt, return_tensors="pt")
         num_tokens = torch.numel(input_tokens)
 
-        kwargs = self.validate_kwargs(**kwargs)
-
-        hf_response = self.llm.generate(input_tokens, **kwargs)
+        hf_response = self.llm.generate(input_tokens, **validated_kwargs)
         out_tokens = torch.numel(hf_response)  # sum([len(rt) for rt in zipped_tokens])
         llm_response.set_token_count(
             prompt_count=num_tokens, completion_count=out_tokens
@@ -136,7 +135,7 @@ class HFPipeline(BaseLLMProvider):
                 "".join(self.tokenizer.batch_decode(seq, skip_special_tokens=True))
                 for seq in hf_response
             ]
-            llm_response.set_response(response_texts, finish_reason="stop")
+            llm_response.set_response(response_texts, finish_reasons=["stop"])
         return llm_response
 
     async def generate_stream(
@@ -155,6 +154,7 @@ class HFPipeline(BaseLLMProvider):
             "Streaming not supported for HF models, Simulating generate instead"
         )
         formatted_prompt = self.format_prompt(prompt_value)
+        validated_kwargs = self.validate_kwargs(**kwargs)
         input_tokens = self.tokenizer.encode(formatted_prompt, return_tensors="pt")
         num_tokens = torch.numel(input_tokens)
         num_sequences = kwargs.get("num_return_sequences", 1)
@@ -162,10 +162,8 @@ class HFPipeline(BaseLLMProvider):
             model=self.model, num_sequences=num_sequences, prompt_tokens=num_tokens
         )
 
-        kwargs = self.validate_kwargs(**kwargs)
-
         async def async_generator() -> AsyncGenerator[Any | str, Any]:
-            hf_response = self.llm.generate(input_tokens, **kwargs)
+            hf_response = self.llm.generate(input_tokens, **validated_kwargs)
             out_tokens = torch.numel(
                 hf_response
             )  # sum([len(rt) for rt in zipped_tokens])
@@ -180,8 +178,12 @@ class HFPipeline(BaseLLMProvider):
                     llm_response.add_delta(list(token_texts))
                     yield llm_response
 
-            # Last token!
-            llm_response.add_last_delta()
+            # Last token [HF does not seem to handle 'length']
+            if out_tokens >= kwargs.get("max_tokens", 0):
+                finish_reason = "length"
+            else:
+                finish_reason = "stop"
+            llm_response.add_last_delta(finish_reasons=[finish_reason])
             yield llm_response
 
         return async_generator()

@@ -1,10 +1,10 @@
 """Interface from Gradio/CLI/PyTest to use the LLM models."""
 import json
 import logging
-from typing import Any, AsyncGenerator, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from chatllm.llms.base import BaseLLMProvider
-from chatllm.llms.llm_params import LLMConfig
+from chatllm.llms.llm_params import LLMConfig, LLMParam
 from chatllm.prompts import (
     ChatMessage,
     ChatPromptValue,
@@ -17,6 +17,21 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "openai:gpt-3.5-turbo"
 
+simple_system_prompt = """\
+You are a helpful, respectful and honest assistant. \
+Always answer as helpfully as possible, while being safe.\
+"""
+long_system_prompt = """\
+You are a helpful, respectful and honest assistant. Always answer as helpfully as possible,
+while being safe. Your answers should not include any harmful, unethical, racist, sexist,
+toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased
+and positive in nature.
+
+If a question does not make any sense, or is not factually coherent, explain why instead of
+answering something not correct. If you don't know the answer to a question, please don't share
+false information.
+"""
+
 
 class LLMController:
     """A chat Controller for conversational models."""
@@ -26,6 +41,8 @@ class LLMController:
         self.llm = None
         self.model_map = BaseLLMProvider.registered_models()
         self.model_config: LLMConfig | None = None
+        self.system_prompt_type = "simple"
+        self.system_prompt = simple_system_prompt
 
     def get_model_list(self) -> List[str]:
         """return the list of models"""
@@ -61,20 +78,38 @@ class LLMController:
         ][0]
         # asyncio.run(self.llm.load())
 
-    def get_model_params(self, model_name):
-        # return self.llm.get_params()
+    def get_model_params(self) -> Dict[str, LLMParam]:
+        assert (
+            self.model_config is not None
+        ), f"Model {self.model_name} not loaded"  # nosec
         return self.model_config.get_params()
 
-    def create_prompt_value(
-        self, user_query, system_prompt, chat_history=[]
-    ) -> PromptValue:
+    def get_system_prompt_list(self) -> Dict[str, str]:
+        """return the list of system prompts"""
+        return {
+            "simple": simple_system_prompt,
+            "long": long_system_prompt,
+            "none": "",
+            "custom": "",
+        }
+
+    def set_system_prompt(self, type: str, prompt: str = "") -> None:
+        """Set the system prompt"""
+        if prompt:
+            self.system_prompt_type = type
+            self.system_prompt = prompt
+        else:
+            self.system_prompt_type = "none"
+            self.system_prompt = ""
+
+    def create_prompt_value(self, user_query, chat_history=[]) -> PromptValue:
         """Create a PromptValue object"""
         prompt_value: Optional[PromptValue] = None
-        if system_prompt or len(chat_history) > 1:
+        if self.system_prompt or len(chat_history) > 1:
             prompt_value = ChatPromptValue()
-            if system_prompt:
+            if self.system_prompt:
                 prompt_value.add_message(
-                    ChatMessage(role=ChatRole.SYSTEM, content=system_prompt)
+                    ChatMessage(role=ChatRole.SYSTEM, content=self.system_prompt)
                 )
             for user_msg, ai_msg in chat_history:
                 if user_msg:
@@ -113,19 +148,20 @@ class LLMController:
             stream = await self.llm.generate_stream(
                 prompt_value, verbose=verbose, **kwargs
             )
-            async for response_delta in stream:
+            async for llm_response in stream:
                 response_text = (
-                    response_delta.get_first_of_last_token()
+                    llm_response.get_first_of_last_token()
                     if word_by_word
-                    else response_delta.get_first_sequence()
+                    else llm_response.get_first_sequence()
                 )
                 if response_text:
                     yield "content", response_text
-                elif response_delta.finish_reason:
-                    yield "warning", "No response from LLM"
+                elif llm_response.finish_reasons:
+                    finish_reasons = "|".join(llm_response.finish_reasons)
+                    yield "warning", f"No response from LLM [Reason = {finish_reasons}]"
 
             if verbose:
-                response_delta.print_summary()
+                llm_response.print_summary()
 
         except Exception as e:
             logger.warning(f"Exception = {e}")

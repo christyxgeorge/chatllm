@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from abc import ABC
 from enum import Enum
 from typing import Dict, Optional
@@ -23,6 +25,25 @@ class LLMParam(BaseModel):
     default: float
     step: float
 
+    @staticmethod
+    def get_param_values(param: LLMParam | None) -> Dict[str, float | int]:
+        """
+        Utility function to create a dict of param values
+        for use in Gradio App and testing
+        """
+        if param:
+            kwargs = param.dict(exclude={"name", "active"})  # type: ignore
+            kwargs["info"] = kwargs.pop("description", "")
+            kwargs["value"] = kwargs["default"]
+            kwargs["visible"] = True
+            kwargs.pop("default", None)
+        else:
+            kwargs = {
+                "value": 0,
+                "visible": False,
+            }
+        return kwargs
+
 
 class MaxTokens(LLMParam):
     name: str = "max_tokens"
@@ -46,9 +67,9 @@ class Temperature(LLMParam):
 
 class TopP(LLMParam):
     name: str = "top_p"
-    minimum: float = Field(alias="min", default=0)
-    maximum: float = Field(alias="max", default=1)
-    default: float = 1
+    minimum: float = Field(alias="min", default=0.0)
+    maximum: float = Field(alias="max", default=1.0)
+    default: float = 1.0
     step: float = 0.1
     label: str = "Top p"
     description: str = "Alternative to temperature sampling, nucleus sampling"
@@ -57,7 +78,7 @@ class TopP(LLMParam):
 class TopK(LLMParam):
     name: str = "top_k"
     minimum: int = Field(alias="min", default=1)
-    maximum: int = Field(alias="max", default=1000)
+    maximum: int = Field(alias="max", default=100)
     default: int = 50
     step: int = 25
     label: str = "Top k"

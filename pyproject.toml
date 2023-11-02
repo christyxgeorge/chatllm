@@ -23,6 +23,7 @@ pytest-asyncio = "^0.21.1"
 click-repl = "^0.3.0"
 colorama = "^0.4.6"
 click = "^8.1.7"
+google-cloud-aiplatform = "^1.36.0"
 
 
 [tool.poetry.group.dev.dependencies]

@@ -40,7 +40,7 @@ class ReplicateConfig(LLMConfig):
 
 @LLMRegister("replicate")
 class ReplicateApi(BaseLLMProvider):
-    """Class for interfacing with Llama.cpp GGUF models."""
+    """Class for interfacing with Replicate models."""
 
     def __init__(self, model_name: str, **kwargs) -> None:
         super().__init__(model_name, **kwargs)
@@ -112,14 +112,14 @@ class ReplicateApi(BaseLLMProvider):
         **kwargs: Any,
     ) -> LLMResponse:
         formatted_prompt, num_tokens = self.format_prompt(prompt_value)
+        validated_kwargs = self.validate_kwargs(**kwargs)
         llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)
-        kwargs = self.validate_kwargs(**kwargs)
         input_args = {
             "prompt": formatted_prompt,
             # "stop_sequences": stop,
             "debug": verbose,
             "stream": True,
-            **kwargs,
+            **validated_kwargs,
         }
 
         prediction = replicate.predictions.create(version=self.llm, input=input_args)
@@ -132,7 +132,7 @@ class ReplicateApi(BaseLLMProvider):
             out_tokens += 1
             response_text += text_chunk
 
-        llm_response.set_response(response_text, "stop")
+        llm_response.set_response(response_text, ["stop"])
         llm_response.set_token_count(num_tokens, out_tokens)
         self.set_prediction_info(prediction, llm_response)
         return llm_response
@@ -146,14 +146,14 @@ class ReplicateApi(BaseLLMProvider):
     ) -> AsyncGenerator[Any | str, Any]:
         """Pass a single prompt value to the model and stream model generations."""
         formatted_prompt, num_tokens = self.format_prompt(prompt_value)
+        validated_kwargs = self.validate_kwargs(**kwargs)
         llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)
-        kwargs = self.validate_kwargs(**kwargs)
         input_args = {
             "prompt": formatted_prompt,
             # "stop_sequences": stop,
             "debug": verbose,
             "stream": True,
-            **kwargs,
+            **validated_kwargs,
         }
 
         prediction = replicate.predictions.create(version=self.llm, input=input_args)
@@ -167,13 +167,16 @@ class ReplicateApi(BaseLLMProvider):
         async def async_generator() -> AsyncGenerator[Any | str, Any]:
             iterator = prediction.output_iterator()
             for text_chunk in iterator:
-                # print(f"Chunk = {text_chunk}")
                 llm_response.add_delta(text_chunk)
                 yield llm_response
 
             # Last token!
             self.set_prediction_info(prediction, llm_response)
-            llm_response.add_last_delta()
+            if llm_response.completion_tokens >= kwargs.get("max_tokens", 0):
+                finish_reason = "length"
+            else:
+                finish_reason = "stop"
+            llm_response.add_last_delta(finish_reasons=[finish_reason])
             yield llm_response
 
         return async_generator()
