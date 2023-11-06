@@ -1,5 +1,6 @@
 import logging
 import random
+
 from typing import Any
 
 import pytest
@@ -39,9 +40,7 @@ EXAMPLES = [
     ["Write a python function to derive the fibonacci sequence for a given input?"],
     ["What are the capitals of Mozambique and Tanzania?"],
     ["Who is the current world champion in cricket"],
-    [
-        "Sally has two brothers and two sisters. How many sisters does sally's brother have?"
-    ],
+    ["Sally has two brothers and two sisters. How many sisters does sally's brother have?"],
     ["Where is India"],
     # [
     #     """In bash, how do i list all the text files in the current directory \
@@ -74,9 +73,7 @@ class TestLLMGeneration:
         logger.info(f"Running [{mode}] test for {provider}, model = {model_name}")
         llm_controller.load_model(model_name)
         prompt = prompt or random.choice(EXAMPLES)[0]  # nosec
-        prompt_value = llm_controller.create_prompt_value(
-            prompt, SYSTEM_PROMPT, chat_history=[]
-        )
+        prompt_value = llm_controller.create_prompt_value(prompt, SYSTEM_PROMPT)
         params = llm_controller.get_model_params()
         llm_kwargs = {k: v.default for k, v in params.items()}
         llm_kwargs.update(kwargs)
@@ -86,9 +83,7 @@ class TestLLMGeneration:
         llm_controller, prompt_value, llm_kwargs = self._initialize_llm_controller(
             "batched", provider, model_name=model_name, prompt=prompt, **kwargs
         )
-        response_type, response_text = await llm_controller.run_batch(
-            prompt_value, **llm_kwargs
-        )
+        response_type, response_text = await llm_controller.run_batch(prompt_value, **llm_kwargs)
         assert response_type not in ["error", "warning"], f"{response_text}"  # nosec
 
     async def run_llm_stream(self, provider, model_name=None, prompt=None, **kwargs):
@@ -116,9 +111,7 @@ class TestLLMGeneration:
     async def test_llamacpp_batch(self):
         from chatllm.llms.llama_cpp import LlamaCpp
 
-        supported_models = [
-            m for m in LlamaCpp.get_supported_models() if "codellama" not in m
-        ]
+        supported_models = [m for m in LlamaCpp.get_supported_models() if "codellama" not in m]
 
         assert supported_models, "No LLamaCpp models found"  # nosec
         await self.run_llm_batch("llama-cpp", supported_models[0], max_tokens=100)
@@ -130,9 +123,7 @@ class TestLLMGeneration:
     @pytest.mark.asyncio
     async def test_hugging_face_batch_ts(self):
         prompt = "There was a girl called Lily and she"
-        await self.run_llm_batch(
-            "hf", "roneneldan/TinyStories-33M", max_tokens=100, prompt=prompt
-        )
+        await self.run_llm_batch("hf", "roneneldan/TinyStories-33M", max_tokens=100, prompt=prompt)
 
     @pytest.mark.asyncio
     async def test_hugging_face_batch_g2(self):
@@ -142,18 +133,14 @@ class TestLLMGeneration:
     # Test Streaming APIs
     @pytest.mark.asyncio
     async def test_openai_stream(self, request):
-        logger.info(
-            f"Testing OpenAI Streaming API, Root Dir = {request.config.rootdir}"
-        )
+        logger.info(f"Testing OpenAI Streaming API, Root Dir = {request.config.rootdir}")
         await self.run_llm_stream("openai", "gpt-3.5-turbo", max_tokens=100)
 
     @pytest.mark.asyncio
     async def test_llamacpp_stream(self):
         from chatllm.llms.llama_cpp import LlamaCpp
 
-        supported_models = [
-            m for m in LlamaCpp.get_supported_models() if "codellama" not in m
-        ]
+        supported_models = [m for m in LlamaCpp.get_supported_models() if "codellama" not in m]
 
         assert supported_models, "No LLamaCpp models found"  # nosec
         await self.run_llm_stream("llama-cpp", supported_models[0], max_tokens=100)

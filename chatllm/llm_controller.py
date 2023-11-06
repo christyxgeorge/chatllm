@@ -1,8 +1,11 @@
 """Interface from Gradio/CLI/PyTest to use the LLM models."""
+import functools
 import json
 import logging
+
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
+from chatllm.llms import PROVIDER_ORDER
 from chatllm.llms.base import BaseLLMProvider
 from chatllm.llms.llm_params import LLMConfig, LLMParam
 from chatllm.prompts import (
@@ -15,7 +18,7 @@ from chatllm.prompts import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "openai:gpt-3.5-turbo"
+DEFAULT_MODEL = "open_ai:gpt-3.5-turbo"
 
 simple_system_prompt = """\
 You are a helpful, respectful and honest assistant. \
@@ -39,25 +42,42 @@ class LLMController:
     def __init__(self) -> None:
         self.model_name = None
         self.llm = None
-        self.model_map = BaseLLMProvider.registered_models()
         self.model_config: LLMConfig | None = None
         self.system_prompt_type = "simple"
         self.system_prompt = simple_system_prompt
 
+    def sortby_provider(self, x, y) -> int:
+        prov_x = x.split(":")[0]
+        prov_y = y.split(":")[0]
+        if prov_x == prov_y:
+            return 1 if x > y else (0 if x == y else -1)
+        else:
+            idx_x = (
+                PROVIDER_ORDER.index(prov_x) if prov_x in PROVIDER_ORDER else len(PROVIDER_ORDER)
+            )
+            idx_y = (
+                PROVIDER_ORDER.index(prov_y) if prov_y in PROVIDER_ORDER else len(PROVIDER_ORDER)
+            )
+            return idx_x - idx_y
+
     def get_model_list(self) -> List[str]:
         """return the list of models"""
+        model_map = BaseLLMProvider.registered_models()
         models = [
             f"{llm_key}:{m.name}"
-            for llm_key, llm_info in self.model_map.items()
+            for llm_key, llm_info in model_map.items()
             for m in llm_info["models"]
         ]
-        return models
+        sorted_models = sorted(models, key=functools.cmp_to_key(self.sortby_provider))
+        return sorted_models
 
     def get_provider_model_list(self, provider) -> List[str]:
         """return the list of models for the specified provider"""
+        model_map = BaseLLMProvider.registered_models()
+
         models = [
             f"{llm_key}:{m}"
-            for llm_key, llm_info in self.model_map.items()
+            for llm_key, llm_info in model_map.items()
             for m in llm_info["models"]
             if llm_key == provider
         ]
@@ -71,17 +91,14 @@ class LLMController:
         """Load the model"""
         self.model_name = model or self.get_default_model()
         llm_key, model_name = self.model_name.split(":")
-        llm_info = self.model_map.get(llm_key)
+        model_map = BaseLLMProvider.registered_models()
+        llm_info = model_map.get(llm_key)
         self.llm = llm_info["class"](model_name=model_name)
-        self.model_config = [
-            mcfg for mcfg in llm_info["models"] if mcfg.name == model_name
-        ][0]
+        self.model_config = [mcfg for mcfg in llm_info["models"] if mcfg.name == model_name][0]
         # asyncio.run(self.llm.load())
 
     def get_model_params(self) -> Dict[str, LLMParam]:
-        assert (
-            self.model_config is not None
-        ), f"Model {self.model_name} not loaded"  # nosec
+        assert self.model_config is not None, f"Model {self.model_name} not loaded"  # nosec
         return self.model_config.get_params()
 
     def get_system_prompt_list(self) -> Dict[str, str]:
@@ -113,18 +130,12 @@ class LLMController:
                 )
             for user_msg, ai_msg in chat_history:
                 if user_msg:
-                    prompt_value.add_message(
-                        ChatMessage(role=ChatRole.USER, content=user_msg)
-                    )
+                    prompt_value.add_message(ChatMessage(role=ChatRole.USER, content=user_msg))
                 if ai_msg:
-                    prompt_value.add_message(
-                        ChatMessage(role=ChatRole.AI, content=ai_msg)
-                    )
+                    prompt_value.add_message(ChatMessage(role=ChatRole.AI, content=ai_msg))
             if not chat_history:
                 # User Query is included in the chat history.. Add only when there is no chat_history # noqa: E501
-                prompt_value.add_message(
-                    ChatMessage(role=ChatRole.USER, content=user_query)
-                )
+                prompt_value.add_message(ChatMessage(role=ChatRole.USER, content=user_query))
         else:
             prompt_value = StringPromptValue(text=user_query)
         return prompt_value
@@ -140,14 +151,10 @@ class LLMController:
         if verbose:
             logger.info("=" * 50)
             logger.info(f"Prompt = {type(prompt_value)} / {prompt_value}")
-            logger.info(
-                f"Model: {self.llm.model_name}, Params = {json.dumps(kwargs or {})}"
-            )
+            logger.info(f"Model: {self.llm.model_name}, Params = {json.dumps(kwargs or {})}")
 
         try:
-            stream = await self.llm.generate_stream(
-                prompt_value, verbose=verbose, **kwargs
-            )
+            stream = await self.llm.generate_stream(prompt_value, verbose=verbose, **kwargs)
             async for llm_response in stream:
                 response_text = (
                     llm_response.get_first_of_last_token()
@@ -178,14 +185,10 @@ class LLMController:
         if verbose:
             logger.info("=" * 50)
             logger.info(f"Prompt = {prompt_value}")
-            logger.info(
-                f"Model: {self.llm.model_name}, Params = {json.dumps(kwargs or {})}"
-            )
+            logger.info(f"Model: {self.llm.model_name}, Params = {json.dumps(kwargs or {})}")
 
         try:
-            llm_response = await self.llm.generate(
-                prompt_value, verbose=verbose, **kwargs
-            )
+            llm_response = await self.llm.generate(prompt_value, verbose=verbose, **kwargs)
             response_text = llm_response.get_first_sequence()
             if verbose:
                 llm_response.print_summary()

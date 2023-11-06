@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+
 from typing import Any, AsyncGenerator, List, Tuple
 
 import replicate
@@ -28,9 +29,7 @@ logger = logging.getLogger(__name__)
 class ReplicateConfig(LLMConfig):
     # Reference: https://replicate.com/meta/llama-2-70b-chat/api
     # Handle parameter variations
-    max_tokens: LLMParam = MaxTokens(
-        name="max_length", min=0, max=4096, step=64, default=128
-    )
+    max_tokens: LLMParam = MaxTokens(name="max_length", min=0, max=4096, step=64, default=128)
     temperature: LLMParam = Temperature(min=0, max=2, default=0.75, step=0.05)
     length_penalty: LLMParam = LengthPenalty(min=0, max=2, default=1)
     repeat_penalty: LLMParam = RepeatPenalty(min=0, max=2, default=1)
@@ -38,7 +37,7 @@ class ReplicateConfig(LLMConfig):
     num_sequences: LLMParam = NumSequences(active=False)
 
 
-@LLMRegister("replicate")
+@LLMRegister()
 class ReplicateApi(BaseLLMProvider):
     """Class for interfacing with Replicate models."""
 
@@ -47,14 +46,12 @@ class ReplicateApi(BaseLLMProvider):
 
         rep_model = replicate.models.get(model_name)
         model_version = rep_model.versions.list()[0]  # Get the latest version
-        properties = model_version.openapi_schema["components"]["schemas"]["Input"][
-            "properties"
-        ]
+        properties = model_version.openapi_schema["components"]["schemas"]["Input"]["properties"]
         self.llm = model_version
         self.input_properties = {k: v for k, v in properties.items()}
 
-    @staticmethod
-    def get_supported_models() -> List[LLMConfig]:
+    @classmethod
+    def get_supported_models(cls, verbose: bool = False) -> List[LLMConfig]:
         """Return a list of supported models."""
         llm_models_url = "https://api.replicate.com/v1/collections/language-models"
         api_key = os.environ.get("REPLICATE_API_TOKEN")
@@ -94,9 +91,7 @@ class ReplicateApi(BaseLLMProvider):
         # Rename max_tokens to max_length
         kwargs["max_length"] = kwargs.pop("max_tokens", 2500)
         kwargs["repetition_penalty"] = kwargs.pop("repeat_penalty", 1)
-        logger.info(
-            f"Supported tokens: {', '.join(k for k in self.input_properties.keys())}"
-        )
+        logger.info(f"Supported tokens: {', '.join(k for k in self.input_properties.keys())}")
         for k, v in kwargs.items():
             if k not in self.input_properties:
                 logger.warning(f"Invalid key {k} for model {self.model_name}, Ignoring")
@@ -159,9 +154,7 @@ class ReplicateApi(BaseLLMProvider):
         prediction = replicate.predictions.create(version=self.llm, input=input_args)
 
         # TODO: Validation of the args is not being done!
-        logger.info(
-            f"Replicate prediction using {self.model_name}; Args = {input_args}"
-        )
+        logger.info(f"Replicate prediction using {self.model_name}; Args = {input_args}")
 
         # Wrap it in an async_generator!
         async def async_generator() -> AsyncGenerator[Any | str, Any]:
@@ -191,9 +184,7 @@ class ReplicateApi(BaseLLMProvider):
             logger.info(f"Prediction Status = {prediction.status}")
             logger.info(f"Prediction Logs = {prediction_logs}")
             prompt_tokens = int(prediction_logs.get("Number of tokens in prompt", 0))
-            completion_tokens = int(
-                prediction_logs.get("Number of tokens generated", 0)
-            )
+            completion_tokens = int(prediction_logs.get("Number of tokens generated", 0))
             usage = {
                 "prompt_tokens": prompt_tokens,
                 "completion_tokens": completion_tokens,

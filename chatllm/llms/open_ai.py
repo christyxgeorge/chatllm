@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+
 from typing import Any, AsyncGenerator, List, Tuple
 
 import openai
@@ -38,7 +39,7 @@ class OpenAIConfig(LLMConfig):
     length_penalty: LLMParam = LengthPenalty(active=False)
 
 
-@LLMRegister("openai")
+@LLMRegister()
 class OpenAIChat(BaseLLMProvider):
     """Abstract base class for interfacing with OpenAI language models."""
 
@@ -49,7 +50,7 @@ class OpenAIChat(BaseLLMProvider):
         openai.api_key = os.environ.get("OPENAI_API_KEY")
 
     @classmethod
-    def get_supported_models(cls) -> List[LLMConfig]:
+    def get_supported_models(cls, verbose: bool = False) -> List[LLMConfig]:
         """Return a list of supported models."""
         openai.api_key = os.environ.get("OPENAI_API_KEY")
         # model_list = openai.Model.list()
@@ -57,9 +58,7 @@ class OpenAIChat(BaseLLMProvider):
         # print(f"Open AI Model List = {len(model_list)} // {model_list}")
         # model_list = [m for m in model_list if m.startswith("gpt")]
         model_list: List[LLMConfig] = [
-            OpenAIConfig(
-                name="gpt-3.5-turbo", desc="OpenAI GPT-3.5 Turbo", ctx=4096, cpt=0.01
-            ),
+            OpenAIConfig(name="gpt-3.5-turbo", desc="OpenAI GPT-3.5 Turbo", ctx=4096, cpt=0.01),
             OpenAIConfig(
                 name="gpt-3.5-turbo-16k",
                 desc="OpenAI GPT-3.5 Turbo",
@@ -87,9 +86,7 @@ class OpenAIChat(BaseLLMProvider):
         # print(f"Encoding = {tokens}")
         return len(tokens)
 
-    def format_prompt(
-        self, prompt_value: PromptValue
-    ) -> Tuple[list[dict[str, str]], int]:
+    def format_prompt(self, prompt_value: PromptValue) -> Tuple[list[dict[str, str]], int]:
         """Format the prompt for OpenAI"""
         formatted_prompt = prompt_value.to_messages()
         return formatted_prompt, self.get_token_count(prompt_value.to_string())

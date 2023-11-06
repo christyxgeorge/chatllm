@@ -19,9 +19,11 @@ from chatllm.llms.llm_params import (
     RepeatPenalty,
     Temperature,
     TopK,
-    TopP,
 )
 from chatllm.prompts import PromptValue
+
+# from google.oauth2 import service_account
+
 
 logger = logging.getLogger(__name__)
 
@@ -42,46 +44,34 @@ class Palm2Config(LLMConfig):
 PALM2_MODEL_LIST: List[Palm2Config] = [
     Palm2Config(name="chat-bison", desc="PaLM-2 for Chat", ctx=8192, cpt=0.0),
     Palm2Config(
-        name="chat-bison-32k",
-        desc="PaLM-2 for Chat (32K)",
-        ctx=32768,
-        cpt=0.0,
-    ),
-    Palm2Config(
         name="text-bison",
         desc="PaLM-2 for Chat",
         ctx=8192,
         cpt=0.0,
     ),
-    Palm2Config(
-        name="code-bison",
-        desc="Codey for code generation",
-        top_p=TopP(active=False),
-        top_k=TopK(active=False),
-        ctx=6144,
-        cpt=0.0,
-    ),
-    Palm2Config(
-        name="codechat-bison",
-        desc="Codey for code chat",
-        ctx=6144,
-        cpt=0.0,
-    ),
 ]
 
 
-@LLMRegister("vertexai")
-class Palm2API(BaseLLMProvider):
+@LLMRegister()
+class Palm2Api(BaseLLMProvider):
     """Class for interfacing with GCP PaLM2 models."""
 
     def __init__(self, model_name: str, **kwargs) -> None:
         super().__init__(model_name, **kwargs)
+        # credentials_file = os.environ.get("GCLOUD_CREDENTIALS_FILE")
+        # credentials = service_account.Credentials.from_service_account_file(credentials_file)
+        # palm.configure(credentials=credentials)
         palm.configure(api_key=os.environ["PALM2_API_KEY"])
         self.llm = palm
 
-    @staticmethod
-    def get_supported_models() -> List[LLMConfig]:
+    @classmethod
+    def get_supported_models(cls, verbose: bool = False) -> List[LLMConfig]:
         """Return a list of supported models."""
+        palm.configure(api_key=os.environ["PALM2_API_KEY"])
+        if verbose:
+            mlist = palm.list_models()
+            model_list = [model for model in mlist]
+            logger.info(f"Model List = {model_list}")
         return cast(List[LLMConfig], PALM2_MODEL_LIST)
 
     async def load(self, **kwargs: Any) -> None:

@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import logging
 import os
+
 from typing import Any, AsyncGenerator, List, Tuple, cast
 
 import vertexai
+
 from google.oauth2 import service_account
 from vertexai.language_models import (
     ChatModel,
@@ -42,9 +44,7 @@ class VertexConfig(LLMConfig):
     temperature: LLMParam = Temperature(min=0, max=1, default=0.75, step=0.05)
     length_penalty: LLMParam = LengthPenalty(active=False)
     repeat_penalty: LLMParam = RepeatPenalty(active=False)
-    num_sequences: LLMParam = NumSequences(
-        name="candidate_count", min=1, max=8, default=1
-    )
+    num_sequences: LLMParam = NumSequences(name="candidate_count", min=1, max=8, default=1)
     top_k: LLMParam = TopK(min=0, max=40, default=40, step=10)
 
     # class to be used:
@@ -99,7 +99,7 @@ VERTEX_MODEL_LIST: List[VertexConfig] = [
 ]
 
 
-@LLMRegister("vertexai")
+@LLMRegister()
 class VertexApi(BaseLLMProvider):
     """Class for interfacing with GCP Vertex.AI models."""
 
@@ -109,9 +109,7 @@ class VertexApi(BaseLLMProvider):
         location = os.environ.get("GCLOUD_LOCATION")
         staging_bucket = os.environ.get("GCLOUD_BUCKET")
         credentials_file = os.environ.get("GCLOUD_CREDENTIALS_FILE")
-        credentials = service_account.Credentials.from_service_account_file(
-            credentials_file
-        )
+        credentials = service_account.Credentials.from_service_account_file(credentials_file)
         vertexai.init(
             project=project,
             location=location,
@@ -122,8 +120,8 @@ class VertexApi(BaseLLMProvider):
         self.llm = llm_info.vertex_class.from_pretrained(model_name)
         self.model_type = llm_info.mtype
 
-    @staticmethod
-    def get_supported_models() -> List[LLMConfig]:
+    @classmethod
+    def get_supported_models(cls, verbose: bool = False) -> List[LLMConfig]:
         """Return a list of supported models."""
         return cast(List[LLMConfig], VERTEX_MODEL_LIST)
 
@@ -190,17 +188,11 @@ class VertexApi(BaseLLMProvider):
         if self.model_type == LLMModelType.CHAT_MODEL:
             system_prompt = prompt_value.get_system_prompt()
             chat = self.llm.start_chat(context=system_prompt)
-            prediction = chat.send_message_streaming_async(
-                formatted_prompt, **validated_kwargs
-            )
+            prediction = chat.send_message_streaming_async(formatted_prompt, **validated_kwargs)
         else:
-            prediction = self.llm.predict_streaming_async(
-                formatted_prompt, **validated_kwargs
-            )
+            prediction = self.llm.predict_streaming_async(formatted_prompt, **validated_kwargs)
 
-        logger.info(
-            f"Vertex.AI prediction using {self.model_name}; Args = {validated_kwargs}"
-        )
+        logger.info(f"Vertex.AI prediction using {self.model_name}; Args = {validated_kwargs}")
 
         # Wrap it in an async_generator!
         async def async_generator() -> AsyncGenerator[Any | str, Any]:

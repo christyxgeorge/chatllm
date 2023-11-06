@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import logging
+
 from typing import Any, AsyncGenerator, List
 
 import torch
+
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from chatllm.llm_response import LLMResponse
@@ -28,37 +30,29 @@ class HuggingFaceConfig(LLMConfig):
     max_tokens: LLMParam = MaxTokens(name="max_new_tokens")
     temperature: LLMParam = Temperature(min=0, max=2, default=1)
     length_penalty: LLMParam = LengthPenalty(min=0, max=2, default=1)
-    repeat_penalty: LLMParam = RepeatPenalty(
-        name="repetition_penalty", min=0, max=2, default=1
-    )
+    repeat_penalty: LLMParam = RepeatPenalty(name="repetition_penalty", min=0, max=2, default=1)
 
 
-@LLMRegister("hf")
+@LLMRegister()
 class HFPipeline(BaseLLMProvider):
     """Class for interfacing with HF models."""
 
     def __init__(self, model_name: str, **kwargs) -> None:
         super().__init__(model_name, **kwargs)
-        self.llm = AutoModelForCausalLM.from_pretrained(
-            model_name, trust_remote_code=True
-        )
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            model_name, trust_remote_code=True
-        )
+        self.llm = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         logger.info(f"Tokenizer initialized {self.tokenizer}")
 
-    @staticmethod
-    def get_supported_models() -> List[LLMConfig]:
+    @classmethod
+    def get_supported_models(cls, verbose: bool = False) -> List[LLMConfig]:
         """Return a list of supported models."""
         # TODO: Can load available models in the Local HF Cache ~/cache/huggingface/hub
         model_list: List[LLMConfig] = [
             HuggingFaceConfig(name="gpt2", desc="OpenAI GPT2"),
             HuggingFaceConfig(name="microsoft/phi-1_5", desc="Microsoft Phi 1.5"),
-            HuggingFaceConfig(
-                name="roneneldan/TinyStories-33M", desc="Microsoft Tiny Stories"
-            ),
+            HuggingFaceConfig(name="roneneldan/TinyStories-33M", desc="Microsoft Tiny Stories"),
         ]
         return model_list
         # return [
@@ -86,9 +80,7 @@ class HFPipeline(BaseLLMProvider):
     def format_prompt(self, prompt_value: PromptValue) -> str:
         """Format the prompt and return the number of tokens in the prompt."""
         # formatted_prompt = f"Question: {prompt} Answer: " if prompt else ""
-        if self.model_name in [
-            "roneneldan/TinyStories-33M"
-        ]:  # , 'replit/replit-code-v1_5-3b']:
+        if self.model_name in ["roneneldan/TinyStories-33M"]:  # , 'replit/replit-code-v1_5-3b']:
             formatted_prompt = prompt_value.to_string(format="user_last")
         else:
             formatted_prompt = prompt_value.to_string(format="role:content")
@@ -127,9 +119,7 @@ class HFPipeline(BaseLLMProvider):
 
         hf_response = self.llm.generate(input_tokens, **validated_kwargs)
         out_tokens = torch.numel(hf_response)  # sum([len(rt) for rt in zipped_tokens])
-        llm_response.set_token_count(
-            prompt_count=num_tokens, completion_count=out_tokens
-        )
+        llm_response.set_token_count(prompt_count=num_tokens, completion_count=out_tokens)
         if out_tokens:
             response_texts = [
                 "".join(self.tokenizer.batch_decode(seq, skip_special_tokens=True))
@@ -150,9 +140,7 @@ class HFPipeline(BaseLLMProvider):
         Streaming not supported for HF models, so we similute a token-by-token async generation
         from the entire result
         """
-        logger.warning(
-            "Streaming not supported for HF models, Simulating generate instead"
-        )
+        logger.warning("Streaming not supported for HF models, Simulating generate instead")
         formatted_prompt = self.format_prompt(prompt_value)
         validated_kwargs = self.validate_kwargs(**kwargs)
         input_tokens = self.tokenizer.encode(formatted_prompt, return_tensors="pt")
@@ -164,17 +152,13 @@ class HFPipeline(BaseLLMProvider):
 
         async def async_generator() -> AsyncGenerator[Any | str, Any]:
             hf_response = self.llm.generate(input_tokens, **validated_kwargs)
-            out_tokens = torch.numel(
-                hf_response
-            )  # sum([len(rt) for rt in zipped_tokens])
+            out_tokens = torch.numel(hf_response)  # sum([len(rt) for rt in zipped_tokens])
             logger.info(f"Hugging Face Response = {out_tokens} tokens generated")
             if out_tokens:
                 # Strip Question and NBSPs(0xa0)
                 zipped_tokens = hf_response.t().tolist()
                 for tokens in zipped_tokens:
-                    token_texts = self.tokenizer.batch_decode(
-                        tokens, skip_special_tokens=True
-                    )
+                    token_texts = self.tokenizer.batch_decode(tokens, skip_special_tokens=True)
                     llm_response.add_delta(list(token_texts))
                     yield llm_response
 

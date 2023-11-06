@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+
 from abc import ABC, abstractmethod
 from typing import Any, AsyncGenerator, Dict, List, Type
 
@@ -14,14 +15,14 @@ logger = logging.getLogger(__name__)
 class LLMRegister(object):
     """Class Decorater to register the list of supported models"""
 
-    def __init__(self, llm_key):
-        self.llm_key = llm_key
+    def __init__(self):
         self.llms = {}
 
     def __call__(self, clz: Type[BaseLLMProvider]) -> Type[BaseLLMProvider]:
         """Register the list of supported models"""
-        logger.info(f"Adding LLM Provider = {self.llm_key} // {clz}")
-        BaseLLMProvider.register_llm(self.llm_key, clz)
+        llm_key = clz.__module__.split(".")[-1]  # Use Module/Package Name (file name)
+        logger.info(f"Adding LLM Provider = {llm_key} // {clz}")
+        BaseLLMProvider.register_llm(llm_key, clz)
         return clz
 
 

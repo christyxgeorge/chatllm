@@ -4,6 +4,7 @@ from __future__ import annotations
 import glob
 import logging
 import os
+
 from typing import Any, AsyncGenerator, Dict, List, Tuple, cast
 
 from llama_cpp import Completion, CompletionChoice, CompletionChunk, Llama
@@ -28,9 +29,7 @@ logger = logging.getLogger(__name__)
 class LlamaCppConfig(LLMConfig):
     # Reference: https://llama-cpp-python.readthedocs.io/en/latest/api-reference/#llama_cpp.Llama.create_chat_completion
     # Handle parameter variations
-    max_tokens: LLMParam = MaxTokens(
-        name="max_tokens", min=0, max=4096, step=64, default=128
-    )
+    max_tokens: LLMParam = MaxTokens(name="max_tokens", min=0, max=4096, step=64, default=128)
     temperature: LLMParam = Temperature(min=0, max=2, default=0.2, step=0.05)
     repeat_penalty: LLMParam = RepeatPenalty(min=0, max=2, default=1.1)
     top_p: LLMParam = TopP(min=0, max=1, default=0.95, step=0.05)
@@ -38,7 +37,7 @@ class LlamaCppConfig(LLMConfig):
     length_penalty: LLMParam = LengthPenalty(active=False)
 
 
-@LLMRegister("llama-cpp")
+@LLMRegister()
 class LlamaCpp(BaseLLMProvider):
     """Class for interfacing with Llama.cpp GGUF models."""
 
@@ -50,16 +49,14 @@ class LlamaCpp(BaseLLMProvider):
         self.llm = Llama(model_path=model_path, n_ctx=2048, verbose=False)
         self.num_sequences = 1
 
-    @staticmethod
-    def get_supported_models() -> List[LLMConfig]:
+    @classmethod
+    def get_supported_models(cls, verbose: bool = False) -> List[LLMConfig]:
         """Return a list of supported models."""
         model_dir = os.environ["CHATLLM_ROOT"] + "/models"
         data_glob = os.path.join(model_dir, "*.gguf")
         files = sorted(glob.glob(data_glob))
         # print(f"glob = {data_glob}, Files = {len(files)}")
-        models: List[LLMConfig] = [
-            LlamaCppConfig(name=f"{os.path.basename(f)}") for f in files
-        ]
+        models: List[LLMConfig] = [LlamaCppConfig(name=f"{os.path.basename(f)}") for f in files]
         return models
 
     async def load(self, **kwargs: Any) -> None:
