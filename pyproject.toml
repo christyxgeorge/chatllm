@@ -54,7 +54,7 @@ ignore = ['W503', 'E231', 'E241', 'E501']
 per-file-ignores = [
     '__init__.py:F401',
 ]
-max-line-length = 100 # So that it doesnt clash with black (88)
+max-line-length = 100 # So that it doesn't clash with black
 count = true
 show-source = true
 
@@ -64,8 +64,15 @@ show_error_context = true
 show_column_numbers = true
 # plugins = "pydantic.mypy"
 
+[tool.black]
+line-length = 100
+
 [tool.bandit]
 exclude_dirs = ["tests", "./.history", "./.venv", "./.git"]
+
+[tool.isort]
+profile = "black"
+lines_between_types = 0
 
 [build-system]
 requires = ["poetry-core"]

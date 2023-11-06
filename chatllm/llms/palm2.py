@@ -34,9 +34,7 @@ class Palm2Config(LLMConfig):
     temperature: LLMParam = Temperature(min=0, max=1, default=0.75, step=0.05)
     length_penalty: LLMParam = LengthPenalty(active=False)
     repeat_penalty: LLMParam = RepeatPenalty(active=False)
-    num_sequences: LLMParam = NumSequences(
-        name="candidate_count", min=1, max=8, default=1
-    )
+    num_sequences: LLMParam = NumSequences(name="candidate_count", min=1, max=8, default=1)
     top_k: LLMParam = TopK(min=0, max=40, default=40, step=10)
 
 
@@ -147,9 +145,7 @@ class Palm2API(BaseLLMProvider):
         llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)
         prediction = self.llm.generate_text(formatted_prompt, **validated_kwargs)
 
-        logger.info(
-            f"Vertex.AI prediction using {self.model_name}; Args = {validated_kwargs}"
-        )
+        logger.info(f"Vertex.AI prediction using {self.model_name}; Args = {validated_kwargs}")
 
         # Wrap it in an async_generator!
         async def async_generator() -> AsyncGenerator[Any | str, Any]:
