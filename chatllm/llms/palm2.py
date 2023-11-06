@@ -5,21 +5,13 @@ import logging
 import os
 from typing import Any, AsyncGenerator, List, Tuple, cast
 
-import vertexai
-from google.oauth2 import service_account
-from vertexai.language_models import (
-    ChatModel,
-    CodeChatModel,
-    CodeGenerationModel,
-    TextGenerationModel,
-)
+import google.generativeai as palm
 
 from chatllm.llm_response import LLMResponse
 from chatllm.llms.base import BaseLLMProvider, LLMRegister
 from chatllm.llms.llm_params import (
     LengthPenalty,
     LLMConfig,
-    LLMModelType,
     LLMParam,
     MaxTokens,
     NumSequences,
@@ -33,8 +25,8 @@ from chatllm.prompts import PromptValue
 logger = logging.getLogger(__name__)
 
 
-class VertexConfig(LLMConfig):
-    # https://cloud.google.com/vertex-ai/docs/generative-ai/model-reference/text
+class Palm2Config(LLMConfig):
+    # https://developers.generativeai.google/api/python/google/generativeai
     # Handle parameter variations
     max_tokens: LLMParam = MaxTokens(
         name="max_output_tokens", min=0, max=1024, step=64, default=128
@@ -47,85 +39,51 @@ class VertexConfig(LLMConfig):
     )
     top_k: LLMParam = TopK(min=0, max=40, default=40, step=10)
 
-    # class to be used:
-    vertex_class: Any
 
-
-VERTEX_MODEL_LIST: List[VertexConfig] = [
-    VertexConfig(
-        name="chat-bison",
-        desc="PaLM-2 for Chat",
-        ctx=8192,
-        cpt=0.0,
-        vertex_class=ChatModel,
-        mtype=LLMModelType.CHAT_MODEL,
-    ),
-    VertexConfig(
+PALM2_MODEL_LIST: List[Palm2Config] = [
+    Palm2Config(name="chat-bison", desc="PaLM-2 for Chat", ctx=8192, cpt=0.0),
+    Palm2Config(
         name="chat-bison-32k",
         desc="PaLM-2 for Chat (32K)",
         ctx=32768,
         cpt=0.0,
-        vertex_class=ChatModel,
-        mtype=LLMModelType.CHAT_MODEL,
     ),
-    VertexConfig(
+    Palm2Config(
         name="text-bison",
         desc="PaLM-2 for Chat",
         ctx=8192,
         cpt=0.0,
-        vertex_class=TextGenerationModel,
-        mtype=LLMModelType.TEXT_GEN_MODEL,
     ),
-    VertexConfig(
+    Palm2Config(
         name="code-bison",
         desc="Codey for code generation",
         top_p=TopP(active=False),
         top_k=TopK(active=False),
         ctx=6144,
         cpt=0.0,
-        vertex_class=CodeGenerationModel,
-        mtype=LLMModelType.TEXT_GEN_MODEL,
     ),
-    VertexConfig(
+    Palm2Config(
         name="codechat-bison",
         desc="Codey for code chat",
-        top_p=TopP(active=False),
-        top_k=TopK(active=False),
         ctx=6144,
         cpt=0.0,
-        vertex_class=CodeChatModel,
-        mtype=LLMModelType.CHAT_MODEL,
     ),
 ]
 
 
 @LLMRegister("vertexai")
-class VertexApi(BaseLLMProvider):
-    """Class for interfacing with GCP Vertex.AI models."""
+class Palm2API(BaseLLMProvider):
+    """Class for interfacing with GCP PaLM2 models."""
 
     def __init__(self, model_name: str, **kwargs) -> None:
         super().__init__(model_name, **kwargs)
-        project = os.environ.get("GCLOUD_PROJECT")
-        location = os.environ.get("GCLOUD_LOCATION")
-        staging_bucket = os.environ.get("GCLOUD_BUCKET")
-        credentials_file = os.environ.get("GCLOUD_CREDENTIALS_FILE")
-        credentials = service_account.Credentials.from_service_account_file(
-            credentials_file
-        )
-        vertexai.init(
-            project=project,
-            location=location,
-            staging_bucket=staging_bucket,
-            credentials=credentials,
-        )
-        llm_info = [mcfg for mcfg in VERTEX_MODEL_LIST if mcfg.name == model_name][0]
-        self.llm = llm_info.vertex_class.from_pretrained(model_name)
-        self.model_type = llm_info.mtype
+        palm.configure(api_key=os.environ["PALM2_API_KEY"])
+        self.llm = palm
 
     @staticmethod
     def get_supported_models() -> List[LLMConfig]:
         """Return a list of supported models."""
-        return cast(List[LLMConfig], VERTEX_MODEL_LIST)
+        return cast(List[LLMConfig], PALM2_MODEL_LIST)
 
     async def load(self, **kwargs: Any) -> None:
         """
@@ -158,19 +116,16 @@ class VertexApi(BaseLLMProvider):
         verbose: bool = False,
         **kwargs: Any,
     ) -> LLMResponse:
+        """
+        Palm2 API has an async API only for chat!.
+        """
         formatted_prompt, num_tokens = self.format_prompt(prompt_value)
         validated_kwargs = self.validate_kwargs(**kwargs)
         llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)
 
-        if self.model_type == LLMModelType.CHAT_MODEL:
-            system_prompt = prompt_value.get_system_prompt()
-            chat = self.llm.start_chat(context=system_prompt)
-            prediction = chat.send_message_async(formatted_prompt, **validated_kwargs)
-        else:
-            # TODO: CHeck predict_async!
-            prediction = self.llm.predict(formatted_prompt, **validated_kwargs)
-            llm_response.set_response(prediction.text, ["stop"])
-            llm_response.set_token_count(num_tokens, 0)
+        prediction = self.llm.generate_text(formatted_prompt, **validated_kwargs)
+        llm_response.set_response(prediction.text, ["stop"])
+        llm_response.set_token_count(num_tokens, 0)
         return llm_response
 
     async def generate_stream(
@@ -180,23 +135,17 @@ class VertexApi(BaseLLMProvider):
         verbose: bool = False,
         **kwargs: Any,
     ) -> AsyncGenerator[Any | str, Any]:
-        """Pass a single prompt value to the model and stream model generations."""
+        """
+        Pass a single prompt value to the model and stream model generations.
+        Note: PalM2 API does not have a streaming API.
+        """
         formatted_prompt, num_tokens = self.format_prompt(prompt_value)
         validated_kwargs = self.validate_kwargs(**kwargs)
         # In case of streaming, candidate count is not used as it is always one
         validated_kwargs.pop("candidate_count")
 
         llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)
-        if self.model_type == LLMModelType.CHAT_MODEL:
-            system_prompt = prompt_value.get_system_prompt()
-            chat = self.llm.start_chat(context=system_prompt)
-            prediction = chat.send_message_streaming_async(
-                formatted_prompt, **validated_kwargs
-            )
-        else:
-            prediction = self.llm.predict_streaming_async(
-                formatted_prompt, **validated_kwargs
-            )
+        prediction = self.llm.generate_text(formatted_prompt, **validated_kwargs)
 
         logger.info(
             f"Vertex.AI prediction using {self.model_name}; Args = {validated_kwargs}"
@@ -205,7 +154,6 @@ class VertexApi(BaseLLMProvider):
         # Wrap it in an async_generator!
         async def async_generator() -> AsyncGenerator[Any | str, Any]:
             async for text_chunk in prediction:
-                # Note: The text_chunk can contain more than one tokens!
                 llm_response.add_delta(text_chunk.text)
                 yield llm_response
 

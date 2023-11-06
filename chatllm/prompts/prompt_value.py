@@ -29,6 +29,10 @@ class PromptValue(BaseModel, ABC):
     def to_messages(self) -> List[dict]:
         """Return prompt as dict of messages that can be serialized to JSON."""
 
+    @abstractmethod
+    def get_system_prompt(self) -> str:
+        """Return the System prompt"""
+
     def __len__(self) -> int:
         """Length of the Prompt Value"""
         chars = self.to_string()
@@ -51,6 +55,9 @@ class StringPromptValue(PromptValue):
         """Return prompt as dict of messages that can be serialized to JSON."""
         return [{"role": "user", "content": self.text}]
 
+    def get_system_prompt(self) -> str:
+        return ""
+
 
 class ChatPromptValue(PromptValue):
     """Chat prompt value."""
@@ -69,6 +76,12 @@ class ChatPromptValue(PromptValue):
     def to_messages(self) -> List[dict]:
         """Return prompt as dict of messages that can be serialized to JSON."""
         return [{"role": m.role.value, "content": m.content} for m in self.messages]
+
+    def get_system_prompt(self) -> str:
+        system_messages = [
+            m.content for m in self.messages if m.role == ChatRole.SYSTEM
+        ]
+        return system_messages[-1] if system_messages else ""
 
     def __str__(self) -> str:
         formatted_repr = "[\n"
