@@ -72,7 +72,7 @@ exclude_dirs = ["tests", "./.history", "./.venv", "./.git"]
 
 [tool.isort]
 profile = "black"
-lines_between_types = 0
+lines_between_types = 1
 
 [build-system]
 requires = ["poetry-core"]
