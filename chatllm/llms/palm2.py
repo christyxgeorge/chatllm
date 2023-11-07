@@ -40,6 +40,10 @@ class Palm2Config(LLMConfig):
     num_sequences: LLMParam = NumSequences(name="candidate_count", min=1, max=8, default=1)
     top_k: LLMParam = TopK(min=0, max=40, default=40, step=10)
 
+    # Variables from the PALM ListModels API
+    palm_model_name: str = ""
+    palm_supported_methods: List[str] = []
+
 
 PALM2_MODEL_LIST: List[Palm2Config] = [
     Palm2Config(name="chat-bison", desc="PaLM-2 for Chat", ctx=8192, cpt=0.0),
@@ -63,15 +67,27 @@ class Palm2Api(BaseLLMProvider):
         # palm.configure(credentials=credentials)
         palm.configure(api_key=os.environ["PALM2_API_KEY"])
         self.llm = palm
+        palm_models = [m for m in PALM2_MODEL_LIST if m.name == self.model_name]
+        palm_model = palm_models[0] if palm_models else None
+        self.palm_model_name = palm_model.palm_model_name if palm_model else None
+        self.supported_methods = palm_model.palm_supported_methods if palm_model else []
+        logger.info(f"Supported Methods: {self.supported_methods}")
 
     @classmethod
     def get_supported_models(cls, verbose: bool = False) -> List[LLMConfig]:
         """Return a list of supported models."""
         palm.configure(api_key=os.environ["PALM2_API_KEY"])
+        mlist = palm.list_models()
+        model_list = [model for model in mlist]
         if verbose:
-            mlist = palm.list_models()
-            model_list = [model for model in mlist]
             logger.info(f"Model List = {model_list}")
+        # TODO: Can use defaults for ctx, top_p, top_k, temp, etc. from the API response
+        for model in PALM2_MODEL_LIST:
+            palm_models = [m for m in model_list if m.name.startswith(f"models/{model.name}")]
+            palm_model = palm_models[0] if palm_models else None
+            if palm_model:
+                model.palm_model_name = palm_model.name
+                model.palm_supported_methods = palm_model.supported_generation_methods
         return cast(List[LLMConfig], PALM2_MODEL_LIST)
 
     async def load(self, **kwargs: Any) -> None:
@@ -83,8 +99,17 @@ class Palm2Api(BaseLLMProvider):
 
     def get_token_count(self, prompt: str) -> int:
         """Return the number of tokens in the prompt."""
-        tokens: List[str] = []
-        return len(tokens)
+        if prompt:
+            count_method = (
+                self.llm.count_text_tokens
+                if ("countTextTokens" in self.supported_methods)
+                else self.llm.count_message_tokens
+            )
+            token_count = count_method(model=self.palm_model_name, prompt=prompt)
+            # print(f"Token Count for {prompt} = {len(prompt)} / {token_count}")
+            return token_count.get("token_count", 0)
+        else:
+            return 0
 
     def format_prompt(self, prompt_value: PromptValue) -> Tuple[str, int]:
         """Format the prompt for Vertex AI Predictions: Nothing to be done!"""
@@ -95,7 +120,7 @@ class Palm2Api(BaseLLMProvider):
         """Validate the kwargs passed to the model"""
         # Rename max_tokens to max output tokens
         kwargs["max_output_tokens"] = kwargs.pop("max_tokens", 128)
-        kwargs["candidate_count"] = kwargs.pop("num_sequences", 1)
+        kwargs["candidate_count"] = int(kwargs.pop("num_sequences", 1))
         return kwargs
 
     async def generate(
@@ -106,15 +131,32 @@ class Palm2Api(BaseLLMProvider):
         **kwargs: Any,
     ) -> LLMResponse:
         """
+        Generate Text
         Palm2 API has an async API only for chat!.
         """
         formatted_prompt, num_tokens = self.format_prompt(prompt_value)
         validated_kwargs = self.validate_kwargs(**kwargs)
         llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)
 
-        prediction = self.llm.generate_text(formatted_prompt, **validated_kwargs)
-        llm_response.set_response(prediction.text, ["stop"])
-        llm_response.set_token_count(num_tokens, 0)
+        if "generateText" in self.supported_methods:
+            completion = self.llm.generate_text(
+                model=self.palm_model_name, prompt=formatted_prompt, **validated_kwargs
+            )
+            result = completion.result
+        else:
+            validated_kwargs.pop("max_output_tokens")  # TODO: Check why we cannot send this?
+            completion = await self.llm.chat_async(
+                model=self.palm_model_name, prompt=formatted_prompt, **validated_kwargs
+            )
+            result = completion.last
+
+        if result:
+            completion_tokens = self.get_token_count(result)
+            llm_response.set_response(result, ["stop"])
+            llm_response.set_token_count(num_tokens, completion_tokens)
+        else:
+            # TODO: Need to handle 'BlockedReason.SAFETY' from completion.filters!
+            logger.warning(f"No response from the model! {completion}")
         return llm_response
 
     async def generate_stream(
@@ -126,29 +168,40 @@ class Palm2Api(BaseLLMProvider):
     ) -> AsyncGenerator[Any | str, Any]:
         """
         Pass a single prompt value to the model and stream model generations.
-        Note: PalM2 API does not have a streaming API.
+        Note: PalM2 API does not have a streaming API, so we simulate streaming!
         """
         formatted_prompt, num_tokens = self.format_prompt(prompt_value)
         validated_kwargs = self.validate_kwargs(**kwargs)
-        # In case of streaming, candidate count is not used as it is always one
-        validated_kwargs.pop("candidate_count")
 
         llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)
-        prediction = self.llm.generate_text(formatted_prompt, **validated_kwargs)
-
-        logger.info(f"Vertex.AI prediction using {self.model_name}; Args = {validated_kwargs}")
+        if "generateText" in self.supported_methods:
+            completion = self.llm.generate_text(
+                model=self.palm_model_name, prompt=formatted_prompt, **validated_kwargs
+            )
+            result = completion.result
+        else:
+            validated_kwargs.pop("max_output_tokens")  # TODO: Check why we cannot send this?
+            completion = await self.llm.chat_async(
+                model=self.palm_model_name, prompt=formatted_prompt, **validated_kwargs
+            )
+            result = completion.last
 
         # Wrap it in an async_generator!
         async def async_generator() -> AsyncGenerator[Any | str, Any]:
-            async for text_chunk in prediction:
-                llm_response.add_delta(text_chunk.text)
+            completion_tokens = self.get_token_count(result)
+            if result:
+                llm_response.add_delta(result)
                 yield llm_response
+            else:
+                # TODO: Need to handle 'BlockedReason.SAFETY' from completion.filters!
+                logger.warning(f"No response from the model! {completion}")
 
             # Last token!
             if llm_response.completion_tokens >= kwargs.get("max_tokens", 0):
                 finish_reason = "length"
             else:
                 finish_reason = "stop"
+            llm_response.set_token_count(num_tokens, completion_tokens)
             llm_response.add_last_delta(finish_reasons=[finish_reason])
             yield llm_response
 

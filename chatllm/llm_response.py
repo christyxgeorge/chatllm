@@ -3,6 +3,7 @@
 import json
 import logging
 import uuid
+
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set
 
@@ -69,9 +70,7 @@ class LLMResponse(BaseModel):
         values["response_sequences"] = [""] * values.get("num_sequences", 1)
         return values
 
-    def set_response(
-        self, message: str | List[str], finish_reasons: List[str] = ["stop"]
-    ) -> None:
+    def set_response(self, message: str | List[str], finish_reasons: List[str] = ["stop"]) -> None:
         """Set the LLM response message, when the response is not streamed (all at once))"""
 
         self.response_sequences = message if isinstance(message, list) else [message]
@@ -111,6 +110,8 @@ class LLMResponse(BaseModel):
 
     def add_delta(self, delta: str | List[str]) -> None:
         """Add a LLM token to the response, when the response is streamed"""
+
+        # TODO: Add ability to send token count. Will be useful for the Palm2 API
 
         delta_list = delta if isinstance(delta, list) else [delta]
         assert self.num_sequences == len(delta_list), "Sequence Count Mismatch"  # nosec

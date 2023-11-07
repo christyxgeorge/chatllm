@@ -192,8 +192,6 @@ class VertexApi(BaseLLMProvider):
         else:
             prediction = self.llm.predict_streaming_async(formatted_prompt, **validated_kwargs)
 
-        logger.info(f"Vertex.AI prediction using {self.model_name}; Args = {validated_kwargs}")
-
         # Wrap it in an async_generator!
         async def async_generator() -> AsyncGenerator[Any | str, Any]:
             async for text_chunk in prediction:
