@@ -83,6 +83,18 @@ class LLMController:
         ]
         return models
 
+    @staticmethod
+    def get_model_key_map() -> Dict[str, str]:
+        """Return model key to model name mapping (for use in CLI)"""
+        model_map = BaseLLMProvider.registered_models()
+        model_key_map = {
+            m.key: f"{llm_key}:{m.name}"
+            for llm_key, llm_info in model_map.items()
+            for m in llm_info["models"]
+            if m.key
+        }
+        return model_key_map
+
     def get_default_model(self) -> str:
         """return the default model"""
         return DEFAULT_MODEL

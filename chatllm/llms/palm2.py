@@ -46,10 +46,11 @@ class Palm2Config(LLMConfig):
 
 
 PALM2_MODEL_LIST: List[Palm2Config] = [
-    Palm2Config(name="chat-bison", desc="PaLM-2 for Chat", ctx=8192, cpt=0.0),
+    Palm2Config(name="chat-bison", key="pcb", desc="PaLM-2 for Chat", ctx=8192, cpt=0.0),
     Palm2Config(
         name="text-bison",
-        desc="PaLM-2 for Chat",
+        key="ptb",
+        desc="PaLM-2 for Text Generation",
         ctx=8192,
         cpt=0.0,
     ),
@@ -88,7 +89,8 @@ class Palm2Api(BaseLLMProvider):
             if palm_model:
                 model.palm_model_name = palm_model.name
                 model.palm_supported_methods = palm_model.supported_generation_methods
-        return cast(List[LLMConfig], PALM2_MODEL_LIST)
+        model_list = [m for m in PALM2_MODEL_LIST if m.palm_model_name]
+        return cast(List[LLMConfig], model_list)
 
     async def load(self, **kwargs: Any) -> None:
         """

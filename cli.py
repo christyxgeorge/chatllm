@@ -4,9 +4,11 @@ import os
 import re
 import textwrap
 import time
+
 from typing import TYPE_CHECKING, Any, Dict, List, Tuple
 
 import click
+
 from click_repl import repl
 from click_repl.exceptions import ExitReplException
 from colorama import Fore, Style
@@ -20,10 +22,10 @@ from chatllm.utils import set_env
 if TYPE_CHECKING:
     from chatllm.llm_controller import LLMController
 
-MODEL_INFO: "Dict[str, str]" = {
-    "g35": "openai:gpt-3.5-turbo",
-    "g4": "openai:gpt-4",
-    "dv": "openai:gpt-3.5-turbo-instruct",
+MODEL_INFO: Dict[str, str] = {
+    "g35": "open_ai:gpt-3.5-turbo",
+    "g4": "open_ai:gpt-4",
+    "dv": "open_ai:gpt-3.5-turbo-instruct",
     "lc7b": "llama-cpp:llama-2-7b-chat.Q5_K_M.gguf",
     "m7b": "llama-cpp:mistral-7b-openorca.Q5_K_M.gguf",
     "l7b": "replicate:replicate/llama-7b",
@@ -75,9 +77,13 @@ class ChatLLMContext(object):
         llm_controller = LLMController()
         return llm_controller
 
-    def set_model(self, model_key):
-        self.model_name = MODEL_INFO[model_key]
-        self.llm_controller.load_model(self.model_name)
+    def set_model(self, model_key=None):
+        if model_key:
+            self.model_name = MODEL_INFO[model_key]
+            self.llm_controller.load_model(self.model_name)
+        else:
+            self.llm_controller.load_model()
+            self.model_name = self.llm_controller.model_name
         self.params = self.llm_controller.get_model_params()
         self.vars = {k: v.default for k, v in self.params.items()}
 
@@ -92,9 +98,7 @@ class ChatLLMContext(object):
         """Add Variable reference"""
         return self.vars.get(key)
 
-    async def llm_stream(
-        self, prompt_value: PromptValue, **llm_kwargs
-    ) -> Tuple[str, str]:
+    async def llm_stream(self, prompt_value: PromptValue, **llm_kwargs) -> Tuple[str, str]:
         stream = self.llm_controller.run_stream(
             prompt_value, verbose=self.verbose, word_by_word=True, **llm_kwargs
         )
@@ -117,22 +121,14 @@ class ChatLLMContext(object):
                 self.set_model(model_key)
             llm_kwargs = {k: v.default for k, v in self.params.items()}
             llm_kwargs.update(**self.vars)  # Update with the current variables
-            llm_kwargs.update(
-                **kwargs
-            )  # Update with any over-rides specified in kwargs
+            llm_kwargs.update(**kwargs)  # Update with any over-rides specified in kwargs
             click.echo(f"Arguments to LLM: {llm_kwargs}")
-            prompt_value = self.llm_controller.create_prompt_value(
-                prompt, "", chat_history=[]
-            )
+            prompt_value = self.llm_controller.create_prompt_value(prompt, chat_history=[])
             if self.mode == "stream":
-                response_type, response = asyncio.run(
-                    self.llm_stream(prompt_value, **llm_kwargs)
-                )
+                response_type, response = asyncio.run(self.llm_stream(prompt_value, **llm_kwargs))
             else:
                 response_type, response = asyncio.run(
-                    self.llm_controller.run_batch(
-                        prompt_value, verbose=self.verbose, **llm_kwargs
-                    )
+                    self.llm_controller.run_batch(prompt_value, verbose=self.verbose, **llm_kwargs)
                 )
                 click.echo(f"Response [{response_type}]:\n{response.strip()}")
             time_taken = time.time() - start_time
@@ -155,12 +151,8 @@ class ChatLLMContext(object):
     def show_params(self) -> None:
         for pkey, pval in self.params.items():
             click.echo(Fore.RED + f"{pkey}: {self.vars.get(pkey, 'N/A')}" + Fore.RESET)
-            click.echo(
-                Fore.CYAN + f"    {pval.label} [{pval.description}]" + Fore.RESET
-            )
-            click.echo(
-                f"    Min: {pval.minimum}, Max: {pval.maximum}, Default: {pval.default}"
-            )
+            click.echo(Fore.CYAN + f"    {pval.label} [{pval.description}]" + Fore.RESET)
+            click.echo(f"    Min: {pval.minimum}, Max: {pval.maximum}, Default: {pval.default}")
 
     def show_system_prompts(self) -> None:
         click.echo("\nSystem Prompts:\n")
@@ -203,7 +195,6 @@ class ChatLLMContext(object):
     "-m",
     "--model",
     "model_key",
-    default="g35",
     type=click.Choice([k for k in MODEL_INFO.keys()]),
     help="LLM Model [default: g35 => gpt-3.5-turbo]",
     # show_choices=True,
@@ -212,6 +203,12 @@ def cli(ctx, model_key, verbose):
     """The ChatLLM Shell"""
 
     if not ctx.obj:
+        from chatllm.llm_controller import LLMController
+
+        # Initialize Model_INFO. Needs to be done before the llm_group.list_commands is called
+        global MODEL_INFO
+        MODEL_INFO = LLMController.get_model_key_map()
+
         for command in llm_group.list_commands(ctx):
             cli.add_command(LLM(name=command))
         # Add the context only the first time!
@@ -293,9 +290,7 @@ def model_key(obj, model_key):
         obj.set_model(model_key)
         obj.show_context_info()
     else:
-        click.echo(
-            f"Invalid Model Key: {model_key}, Valid Options are {MODEL_INFO.keys()}"
-        )
+        click.echo(f"Invalid Model Key: {model_key}, Valid Options are {MODEL_INFO.keys()}")
 
 
 @cli.command(name="mode")
@@ -311,6 +306,22 @@ def llm_mode(obj, mode) -> None:
         obj.show_context_info()
     else:
         click.echo(f"Invalid Mode: {mode}, Valid Options are 'stream' or 'batch'")
+
+
+@cli.command(name="stream")
+@click.pass_obj
+def llm_mode_stream(obj) -> None:
+    """Set Model mode to 'stream'"""
+    obj.mode = "stream"
+    obj.show_context_info()
+
+
+@cli.command(name="batch")
+@click.pass_obj
+def llm_mode_batch(obj) -> None:
+    """Set Model mode to 'batch'"""
+    obj.mode = "batch"
+    obj.show_context_info()
 
 
 @cli.command(
@@ -331,9 +342,7 @@ def set_var(obj) -> None:
     if not ctx.args:
         obj.show_params()
     else:
-        arg_vars = [
-            item.split("=") if "=" in item else [item, "true"] for item in ctx.args
-        ]
+        arg_vars = [item.split("=") if "=" in item else [item, "true"] for item in ctx.args]
         for key, value in arg_vars:
             obj.set(key, value)
         obj.show_context_info()
@@ -408,9 +417,7 @@ class LLM(click.Command):
             ctx.obj.set_model(self.name)
         else:
             prompt = " ".join(ctx.args)
-            click.echo(
-                f"Invoked LLM [{ctx.obj.model_name}] with prompt, {prompt} / {self.name}"
-            )
+            click.echo(f"Invoked LLM [{ctx.obj.model_name}] with prompt, {prompt} / {self.name}")
             return ctx.obj.llm_run(prompt, self.name)
 
 

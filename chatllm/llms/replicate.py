@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 
 from typing import Any, AsyncGenerator, List, Tuple
 
@@ -60,10 +61,16 @@ class ReplicateApi(BaseLLMProvider):
         )
         models: List[LLMConfig] = []
         if response.status_code == 200:
-            models = [
-                ReplicateConfig(name=f"{x['owner']}/{x['name']}", desc=x["description"])
-                for x in response.json()["models"]
-            ]
+            models = []
+            for x in response.json()["models"]:
+                name = f"{x['owner']}/{x['name']}"
+                m = re.search("-[0-9]+b", x["name"])
+                if m:
+                    params = m.group(0).strip("-")
+                    key = f"{x['name'][0]}{params}"
+                    models.append(ReplicateConfig(name=name, key=key, desc=x["description"]))
+                else:
+                    models.append(ReplicateConfig(name=name, desc=x["description"]))
         else:
             logger.info("Unable to get LLM models from Replicate")
         return models

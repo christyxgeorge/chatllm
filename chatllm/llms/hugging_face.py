@@ -50,9 +50,11 @@ class HFPipeline(BaseLLMProvider):
         """Return a list of supported models."""
         # TODO: Can load available models in the Local HF Cache ~/cache/huggingface/hub
         model_list: List[LLMConfig] = [
-            HuggingFaceConfig(name="gpt2", desc="OpenAI GPT2"),
-            HuggingFaceConfig(name="microsoft/phi-1_5", desc="Microsoft Phi 1.5"),
-            HuggingFaceConfig(name="roneneldan/TinyStories-33M", desc="Microsoft Tiny Stories"),
+            HuggingFaceConfig(name="gpt2", key="g2", desc="OpenAI GPT2"),
+            HuggingFaceConfig(name="microsoft/phi-1_5", key="p15", desc="Microsoft Phi 1.5"),
+            HuggingFaceConfig(
+                name="roneneldan/TinyStories-33M", key="ts", desc="Microsoft Tiny Stories"
+            ),
         ]
         return model_list
         # return [

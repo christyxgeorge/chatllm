@@ -1,5 +1,6 @@
 """Setup the Gradio App"""
 import logging
+
 from typing import List
 
 import gradio as gr
@@ -33,9 +34,7 @@ examples = [
     ["Write a python function to derive the fibonacci sequence for a given input?"],
     ["What are the capitals of Mozambique and Tanzania?"],
     ["Who is the current world champion in cricket"],
-    [
-        "Sally has two brothers and two sisters. How many sisters does sally's brother have?"
-    ],
+    ["Sally has two brothers and two sisters. How many sisters does sally's brother have?"],
     ["Where is India"],
     [
         "In bash, how do i list all the text files in the current directory "
@@ -88,9 +87,7 @@ def model_changed(state: gr.State, model_name: str, parameters: List[gr.Slider])
             logger.info(f"Changing model from {state['model']} to {model_name}")
             llm_controller.load_model(model_name)
             params = llm_controller.get_model_params()
-            param_values = {
-                k: LLMParam.get_param_values(params.get(k, None)) for k in param_keys
-            }
+            param_values = {k: LLMParam.get_param_values(params.get(k, None)) for k in param_keys}
             values = {k: v["value"] for k, v in param_values.items()}
             state["params"] = values
             state["model"] = model_name
@@ -110,9 +107,7 @@ def model_changed(state: gr.State, model_name: str, parameters: List[gr.Slider])
 
 
 def parameter_changed(state: gr.State, parameter: gr.Slider, value: int | float):
-    logger.debug(
-        f"Parameter: {parameter.elem_id} // Value: {value} / {parameter.value}"
-    )
+    logger.debug(f"Parameter: {parameter.elem_id} // Value: {value} / {parameter.value}")
     state["params"][parameter.elem_id] = value
     return state
 
@@ -159,9 +154,7 @@ async def submit_query(state: gr.State, chat_history):
     prompt_value = llm_controller.create_prompt_value(user_query, chat_history)
     verbose = state.get("verbose", False)
     if state["stream_mode"]:
-        stream = llm_controller.run_stream(
-            prompt_value=prompt_value, verbose=verbose, **kwargs
-        )
+        stream = llm_controller.run_stream(prompt_value=prompt_value, verbose=verbose, **kwargs)
         # print(f"Stream type = {type(stream)}")
         async for response_type, response_text in stream:  # type: ignore
             _handle_response(response_type, response_text, chat_history)
@@ -225,9 +218,7 @@ def setup_gradio(verbose=False):
 
         with gr.Row():
             with gr.Column(scale=2):
-                with gr.Accordion(
-                    "Parameters", open=False, visible=False
-                ) as parameter_row:
+                with gr.Accordion("Parameters", open=False, visible=False) as parameter_row:
                     max_tokens = gr.Slider(elem_id="max_tokens", visible=False)
                     temperature = gr.Slider(elem_id="temperature", visible=False)
                     top_p = gr.Slider(elem_id="top_p", visible=False)
@@ -253,12 +244,8 @@ def setup_gradio(verbose=False):
                         scale=8,
                         visible=True,
                     ).style(container=False)
-                    submit_btn = gr.Button(
-                        value="Submit", scale=2, visible=True, variant="primary"
-                    )
-                    stop_btn = gr.Button(
-                        value="Stop", scale=2, visible=False, variant="stop"
-                    )
+                    submit_btn = gr.Button(value="Submit", scale=2, visible=True, variant="primary")
+                    stop_btn = gr.Button(value="Stop", scale=2, visible=False, variant="stop")
                     gr.ClearButton(
                         [chatbot],
                         value="🗑️ Clear history",

@@ -2,6 +2,7 @@ import argparse
 import logging
 import sys
 import warnings
+
 from typing import Literal
 
 from chatllm.utils import set_env
@@ -13,17 +14,13 @@ from chatllm.utils import set_env
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="chatllm", description="Chat LLM")
-    subparsers = parser.add_subparsers(
-        title="Gradio Options", dest="command", required=False
-    )
+    subparsers = parser.add_subparsers(title="Gradio Options", dest="command", required=False)
     grad_parser = subparsers.add_parser("gradio")
 
     grad_parser.add_argument("--host", type=str, default="127.0.0.1")
     grad_parser.add_argument("-", "--port", type=int, default=7860)
     grad_parser.add_argument("--concurrency-count", type=int, default=75)
-    grad_parser.add_argument(
-        "-v", "--verbose", action="store_true", help="using verbose mode"
-    )
+    grad_parser.add_argument("-v", "--verbose", action="store_true", help="using verbose mode")
     grad_parser.add_argument("--debug", action="store_true", help="using debug mode")
     args = parser.parse_args()
     if args.verbose:
@@ -39,9 +36,7 @@ def initialize_config(verbose=False, debug=False) -> None:
     log_format = "{asctime}.{msecs:03.0f} {levelname} [{name}]: {message}"
     log_style: Literal["%", "{", "$"] = "{"
     log_level = logging.DEBUG if debug else (logging.INFO if verbose else logging.WARN)
-    logging.basicConfig(
-        format=log_format, level=log_level, datefmt="%I:%M:%S", style=log_style
-    )
+    logging.basicConfig(format=log_format, level=log_level, datefmt="%I:%M:%S", style=log_style)
 
 
 def gradio_app(args):

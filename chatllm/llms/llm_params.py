@@ -129,14 +129,20 @@ class LLMConfig(BaseModel, ABC):
     description: str | None = Field(alias="desc", default=None)
     """Model Name and Description"""
 
+    key: str | None = None
+    """Short Code used in the CLI"""
+
     mtype: LLMModelType = LLMModelType.CHAT_MODEL
     """Model Type: chat, instruct, text_gen"""
 
     max_context_length: int = Field(alias="ctx", default=2048)
     """Context Length"""
 
+    billing_model: str = "token"  # "token" or "char" (for PaLM2)
+    """Billing Model - By default per token. PaLM2 uses character based billing"""
+
     cost_per_token: float = Field(alias="cpt", default=0.0)
-    """Cost per token"""
+    """Cost per token/character"""
 
     # LLM Parameters
     max_tokens: LLMParam = MaxTokens()

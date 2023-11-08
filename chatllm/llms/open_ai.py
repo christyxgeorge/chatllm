@@ -58,16 +58,20 @@ class OpenAIChat(BaseLLMProvider):
         # print(f"Open AI Model List = {len(model_list)} // {model_list}")
         # model_list = [m for m in model_list if m.startswith("gpt")]
         model_list: List[LLMConfig] = [
-            OpenAIConfig(name="gpt-3.5-turbo", desc="OpenAI GPT-3.5 Turbo", ctx=4096, cpt=0.01),
+            OpenAIConfig(
+                name="gpt-3.5-turbo", key="g35", desc="OpenAI GPT-3.5 Turbo", ctx=4096, cpt=0.01
+            ),
             OpenAIConfig(
                 name="gpt-3.5-turbo-16k",
+                key="g35-16k",
                 desc="OpenAI GPT-3.5 Turbo",
                 ctx=16384,
                 cpt=0.01,
             ),
-            OpenAIConfig(name="gpt-4", desc="OpenAI GPT-4", ctx=4096, cpt=0.02),
+            OpenAIConfig(name="gpt-4", key="g4", desc="OpenAI GPT-4", ctx=4096, cpt=0.02),
             OpenAIConfig(
                 name="gpt-3.5-turbo-instruct",
+                key="dv",
                 desc="OpenAI GPT-3.5 Turbo Instruct / Davinci",
                 ctx=4096,
                 cpt=0.005,

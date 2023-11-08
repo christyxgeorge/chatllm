@@ -4,6 +4,7 @@ from __future__ import annotations
 import glob
 import logging
 import os
+import re
 
 from typing import Any, AsyncGenerator, Dict, List, Tuple, cast
 
@@ -56,7 +57,16 @@ class LlamaCpp(BaseLLMProvider):
         data_glob = os.path.join(model_dir, "*.gguf")
         files = sorted(glob.glob(data_glob))
         # print(f"glob = {data_glob}, Files = {len(files)}")
-        models: List[LLMConfig] = [LlamaCppConfig(name=f"{os.path.basename(f)}") for f in files]
+        models: List[LLMConfig] = []
+        for f in files:
+            name = f"{os.path.basename(f)}"
+            m = re.search("-[0-9]+b-", name)
+            if m:
+                params = m.group(0).strip("-")
+                key = f"lc{name[0]}{params}"
+                models.append(LlamaCppConfig(name=name, key=key))
+            else:
+                models.append(LlamaCppConfig(name=name))
         return models
 
     async def load(self, **kwargs: Any) -> None:

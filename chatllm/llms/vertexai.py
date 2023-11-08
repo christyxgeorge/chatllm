@@ -54,6 +54,7 @@ class VertexConfig(LLMConfig):
 VERTEX_MODEL_LIST: List[VertexConfig] = [
     VertexConfig(
         name="chat-bison",
+        key="vcb",
         desc="PaLM-2 for Chat",
         ctx=8192,
         cpt=0.0,
@@ -70,6 +71,7 @@ VERTEX_MODEL_LIST: List[VertexConfig] = [
     ),
     VertexConfig(
         name="text-bison",
+        key="vtb",
         desc="PaLM-2 for Chat",
         ctx=8192,
         cpt=0.0,
@@ -78,6 +80,7 @@ VERTEX_MODEL_LIST: List[VertexConfig] = [
     ),
     VertexConfig(
         name="code-bison",
+        key="vcode",
         desc="Codey for code generation",
         top_p=TopP(active=False),
         top_k=TopK(active=False),
@@ -88,6 +91,7 @@ VERTEX_MODEL_LIST: List[VertexConfig] = [
     ),
     VertexConfig(
         name="codechat-bison",
+        key="vcchat",
         desc="Codey for code chat",
         top_p=TopP(active=False),
         top_k=TopK(active=False),
