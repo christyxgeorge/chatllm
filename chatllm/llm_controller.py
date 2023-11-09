@@ -5,9 +5,9 @@ import logging
 
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
+from chatllm.llm_params import LLMConfig, LLMParam
 from chatllm.llms import PROVIDER_ORDER
 from chatllm.llms.base import BaseLLMProvider
-from chatllm.llms.llm_params import LLMConfig, LLMParam
 from chatllm.prompts import (
     ChatMessage,
     ChatPromptValue,
