@@ -6,7 +6,7 @@ from typing import List
 import gradio as gr
 
 from chatllm.llm_controller import LLMController
-from chatllm.llms.llm_params import LLMParam
+from chatllm.llm_params import LLMParam
 
 logger = logging.getLogger(__name__)
 

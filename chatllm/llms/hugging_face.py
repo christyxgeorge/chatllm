@@ -9,9 +9,7 @@ import torch
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from chatllm.llm_response import LLMResponse
-from chatllm.llms.base import BaseLLMProvider, LLMRegister
-from chatllm.llms.llm_params import (
+from chatllm.llm_params import (
     LengthPenalty,
     LLMConfig,
     LLMParam,
@@ -19,6 +17,8 @@ from chatllm.llms.llm_params import (
     RepeatPenalty,
     Temperature,
 )
+from chatllm.llm_response import LLMResponse
+from chatllm.llms.base import BaseLLMProvider, LLMRegister
 from chatllm.prompts import PromptValue
 
 logger = logging.getLogger(__name__)

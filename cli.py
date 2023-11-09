@@ -5,7 +5,7 @@ import re
 import textwrap
 import time
 
-from typing import TYPE_CHECKING, Any, Dict, List, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, NoReturn, Tuple
 
 import click
 
@@ -77,7 +77,7 @@ class ChatLLMContext(object):
         llm_controller = LLMController()
         return llm_controller
 
-    def set_model(self, model_key=None):
+    def set_model(self, model_key=None) -> None:
         if model_key:
             self.model_name = MODEL_INFO[model_key]
             self.llm_controller.load_model(self.model_name)
@@ -122,7 +122,7 @@ class ChatLLMContext(object):
             llm_kwargs = {k: v.default for k, v in self.params.items()}
             llm_kwargs.update(**self.vars)  # Update with the current variables
             llm_kwargs.update(**kwargs)  # Update with any over-rides specified in kwargs
-            click.echo(f"Arguments to LLM: {llm_kwargs}")
+            click.echo(f"Arguments to LLM [{self.model_name}]: {llm_kwargs}")
             prompt_value = self.llm_controller.create_prompt_value(prompt, chat_history=[])
             if self.mode == "stream":
                 response_type, response = asyncio.run(self.llm_stream(prompt_value, **llm_kwargs))
@@ -263,7 +263,7 @@ def shell_start(obj, verbose, debug):
 
 
 @cli.command(name="exit")
-def shell_exit():
+def shell_exit() -> NoReturn:
     """Exit the shell"""
     raise ExitReplException()
 
@@ -417,7 +417,9 @@ class LLM(click.Command):
             ctx.obj.set_model(self.name)
         else:
             prompt = " ".join(ctx.args)
-            click.echo(f"Invoked LLM [{ctx.obj.model_name}] with prompt, {prompt} / {self.name}")
+            model_key = self.name or ctx.info_name
+            model_name = MODEL_INFO[model_key]
+            click.echo(f"Invoked LLM [{model_name}] with prompt, {prompt} / {self.name}")
             return ctx.obj.llm_run(prompt, self.name)
 
 

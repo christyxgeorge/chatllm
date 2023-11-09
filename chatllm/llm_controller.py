@@ -107,6 +107,7 @@ class LLMController:
         llm_info = model_map.get(llm_key)
         self.llm = llm_info["class"](model_name=model_name)
         self.model_config = [mcfg for mcfg in llm_info["models"] if mcfg.name == model_name][0]
+        logger.info(f"Loaded Model: {llm_key}:{model_name}")
         # asyncio.run(self.llm.load())
 
     def get_model_params(self) -> Dict[str, LLMParam]:

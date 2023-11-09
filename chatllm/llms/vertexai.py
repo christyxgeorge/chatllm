@@ -16,9 +16,7 @@ from vertexai.language_models import (
     TextGenerationModel,
 )
 
-from chatllm.llm_response import LLMResponse
-from chatllm.llms.base import BaseLLMProvider, LLMRegister
-from chatllm.llms.llm_params import (
+from chatllm.llm_params import (
     LengthPenalty,
     LLMConfig,
     LLMModelType,
@@ -30,6 +28,8 @@ from chatllm.llms.llm_params import (
     TopK,
     TopP,
 )
+from chatllm.llm_response import LLMResponse
+from chatllm.llms.base import BaseLLMProvider, LLMRegister
 from chatllm.prompts import PromptValue
 
 logger = logging.getLogger(__name__)
@@ -164,15 +164,15 @@ class VertexApi(BaseLLMProvider):
         validated_kwargs = self.validate_kwargs(**kwargs)
         llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)
 
+        # TODO: Check predict_async and send_message_async [Get a not awaited error]!
         if self.model_type == LLMModelType.CHAT_MODEL:
             system_prompt = prompt_value.get_system_prompt()
             chat = self.llm.start_chat(context=system_prompt)
-            prediction = chat.send_message_async(formatted_prompt, **validated_kwargs)
+            prediction = chat.send_message(formatted_prompt, **validated_kwargs)
         else:
-            # TODO: CHeck predict_async!
             prediction = self.llm.predict(formatted_prompt, **validated_kwargs)
-            llm_response.set_response(prediction.text, ["stop"])
-            llm_response.set_token_count(num_tokens, 0)
+        llm_response.set_response(prediction.text, ["stop"])
+        llm_response.set_token_count(num_tokens, 0)
         return llm_response
 
     async def generate_stream(
