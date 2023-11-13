@@ -193,7 +193,7 @@ def setup_gradio(verbose=False):
             with gr.Column(scale=2):
                 model_dropdown = gr.Dropdown(
                     model_list,
-                    value=llm_controller.get_default_model(),
+                    value=model_list[0] if model_list else None,
                     label="Model",
                     info=f"Choose from one of the supported models: {len(model_list)} found!",
                     visible=False,

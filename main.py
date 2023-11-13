@@ -1,4 +1,5 @@
 import argparse
+import copy
 import logging
 import sys
 import warnings
@@ -12,17 +13,34 @@ from chatllm.utils import set_env
 # ===========================================================================================
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(cmdline_args) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="chatllm", description="Chat LLM")
     subparsers = parser.add_subparsers(title="Gradio Options", dest="command", required=False)
-    grad_parser = subparsers.add_parser("gradio")
 
+    common_parser = argparse.ArgumentParser(add_help=False)
+    # common_parser.add_argument(
+    #     "-m",
+    #     "--model_id",
+    #     choices=BaseLanguageModel.models(),
+    #     default=BaseLanguageModel.default_model(),
+    # )
+    common_parser.add_argument("-v", "--verbose", action="store_true", default=False)
+    common_parser.add_argument(
+        "--debug", action="store_true", default=False, help="using debug mode"
+    )
+
+    grad_parser = subparsers.add_parser("gradio", parents=[common_parser])
     grad_parser.add_argument("--host", type=str, default="127.0.0.1")
     grad_parser.add_argument("-", "--port", type=int, default=7860)
     grad_parser.add_argument("--concurrency-count", type=int, default=75)
-    grad_parser.add_argument("-v", "--verbose", action="store_true", help="using verbose mode")
-    grad_parser.add_argument("--debug", action="store_true", help="using debug mode")
-    args = parser.parse_args()
+
+    shell_parser = subparsers.add_parser("shell", parents=[common_parser])  # noqa: F841
+
+    args, extra_args = parser.parse_known_args(cmdline_args)
+    if not args.command:
+        args = common_parser.parse_args(extra_args, args)
+        args.command = "shell"
+
     if args.verbose:
         print(f"Arguments = {args}")  # noqa: T201
     return args
@@ -39,7 +57,7 @@ def initialize_config(verbose=False, debug=False) -> None:
     logging.basicConfig(format=log_format, level=log_level, datefmt="%I:%M:%S", style=log_style)
 
 
-def gradio_app(args):
+def gradio_app(args) -> None:
     from grapp import setup_gradio
 
     with warnings.catch_warnings():
@@ -57,20 +75,21 @@ def gradio_app(args):
 
 if __name__ == "__main__":
     # print(f"Locals = {sys.argv}")
-    if len(sys.argv) == 1:
-        # No arguments passed. Add shell as default [Easier to handle as no args needed for shell!]
-        sys.argv.append("shell")
-    command = "gradio" if sys.argv[1] == "gradio" else "shell"
     debug = "--debug" in sys.argv or "-d" in sys.argv
-
     set_env(debug=debug)
 
-    if command == "shell":
+    cmdline_args = copy.deepcopy(sys.argv)
+    args = parse_args(cmdline_args[1:])  # Exclude program name!
+
+    if args.command == "shell":
         from cli import cli
+
+        # TODO: Need to fix this hack and make CLI command execution possible!
+        if "shell" not in sys.argv:
+            sys.argv.insert(1, "shell")
 
         cli()  # pylint: disable=no-value-for-parameter
     else:
-        args = parse_args()
         initialize_config(verbose=args.verbose, debug=args.debug)
         # Start Gradio App
         gradio_app(args)

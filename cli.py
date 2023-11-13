@@ -200,7 +200,7 @@ class ChatLLMContext(object):
     # show_choices=True,
 )
 def cli(ctx, model_key, verbose):
-    """The ChatLLM Shell"""
+    """The ChatLLM Context"""
 
     if not ctx.obj:
         from chatllm.llm_controller import LLMController
@@ -371,6 +371,15 @@ def set_system_prompt(obj, prompt_type):
 # ===========================================================================================
 
 
+@cli.command(name="providers")
+@click.pass_obj
+def list_providers(obj) -> None:
+    """List Providers"""
+    click.echo("Providers:")
+    for provider in obj.llm_controller.get_provider_list():
+        click.echo(f"    {provider}")
+
+
 @cli.command(
     name="q",
     context_settings=dict(
@@ -396,7 +405,7 @@ class LLMGroup(click.MultiCommand):
     def list_commands(self, ctx) -> List[str]:
         return list(MODEL_INFO.keys())
 
-    def get_command(self, ctx, name):
+    def get_command(self, ctx, name) -> click.Command:
         return LLM(name=name)
 
 

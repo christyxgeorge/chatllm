@@ -45,6 +45,7 @@ class LLMController:
         self.model_config: LLMConfig | None = None
         self.system_prompt_type = "simple"
         self.system_prompt = simple_system_prompt
+        # print("Initializing LLM Controller")
 
     def sortby_provider(self, x, y) -> int:
         prov_x = x.split(":")[0]
@@ -60,8 +61,13 @@ class LLMController:
             )
             return idx_x - idx_y
 
+    def get_provider_list(self) -> List[str]:
+        """Return the list of providers"""
+        model_map = BaseLLMProvider.registered_models()
+        return list(model_map.keys())
+
     def get_model_list(self) -> List[str]:
-        """return the list of models"""
+        """Return the list of models"""
         model_map = BaseLLMProvider.registered_models()
         models = [
             f"{llm_key}:{m.name}"
@@ -95,15 +101,11 @@ class LLMController:
         }
         return model_key_map
 
-    def get_default_model(self) -> str:
-        """return the default model"""
-        return DEFAULT_MODEL
-
     def load_model(self, model=None):
         """Load the model"""
-        self.model_name = model or self.get_default_model()
-        llm_key, model_name = self.model_name.split(":")
         model_map = BaseLLMProvider.registered_models()
+        self.model_name = model or self.get_model_list()[0]
+        llm_key, model_name = self.model_name.split(":")
         llm_info = model_map.get(llm_key)
         self.llm = llm_info["class"](model_name=model_name)
         self.model_config = [mcfg for mcfg in llm_info["models"] if mcfg.name == model_name][0]
