@@ -65,7 +65,7 @@ class TestLLMGeneration:
     ]:  # -> tuple[LLMController, PromptValue, dict[Any, Any]]:
         llm_controller = LLMController()
         if not model_name:
-            supported_models = llm_controller.get_provider_model_list(provider)
+            supported_models = llm_controller.provider_model_list(provider)
             assert supported_models, "No models found"  # nosec
             model_name = random.choice(supported_models)  # nosec
         else:
@@ -109,9 +109,8 @@ class TestLLMGeneration:
     # Tests for batch APIs
     @pytest.mark.asyncio
     async def test_llamacpp_batch(self):
-        from chatllm.llms.llama_cpp import LlamaCpp
-
-        supported_models = [m for m in LlamaCpp.get_supported_models() if "codellama" not in m]
+        models = LLMController.provider_models.get("llama_cpp", [])
+        supported_models = [m for m in models if "codellama" not in m]
 
         assert supported_models, "No LLamaCpp models found"  # nosec
         await self.run_llm_batch("llama-cpp", supported_models[0], max_tokens=100)
@@ -138,9 +137,8 @@ class TestLLMGeneration:
 
     @pytest.mark.asyncio
     async def test_llamacpp_stream(self):
-        from chatllm.llms.llama_cpp import LlamaCpp
-
-        supported_models = [m for m in LlamaCpp.get_supported_models() if "codellama" not in m]
+        models = LLMController.provider_models.get("llama_cpp", [])
+        supported_models = [m for m in models if "codellama" not in m]
 
         assert supported_models, "No LLamaCpp models found"  # nosec
         await self.run_llm_stream("llama-cpp", supported_models[0], max_tokens=100)

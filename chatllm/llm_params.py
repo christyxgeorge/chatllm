@@ -2,17 +2,25 @@ from __future__ import annotations
 
 from abc import ABC
 from enum import Enum
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import (
+    BaseModel,
+    Field,
+    ValidationInfo,
+    ValidatorFunctionWrapHandler,
+    model_validator,
+)
 
 
 class LLMModelType(str, Enum):
     """The LLM Model Type"""
 
-    CHAT_MODEL = "chat"  # Supports History, System Messages
-    INSTRUCT_MOEL = "instruct"  # Supports Instructions
-    TEXT_GEN_MODEL = "text_gen"  # Foundational Model
+    CHAT_MODEL = "chat"  # Supports Chatting with History, System Messages
+    INSTRUCT_MODEL = "instruct"  # Supports Instructions
+    TEXT_GEN_MODEL = "text_gen"  # Foundational Text Generation Model
+    CODE_GEN_MODEL = "code_gen"  # Code Generation Model
+    CODE_CHAT_MODEL = "code_chat"  # Code Chatting Model
 
 
 class LLMParam(BaseModel):
@@ -43,6 +51,11 @@ class LLMParam(BaseModel):
                 "visible": False,
             }
         return kwargs
+
+    def update_values(self, **kwargs: Any) -> None:
+        """Update the values of the param"""
+        for k, v in kwargs.items():
+            setattr(self, k, v)
 
 
 class MaxTokens(LLMParam):
@@ -152,6 +165,39 @@ class LLMConfig(BaseModel, ABC):
     length_penalty: LLMParam = LengthPenalty()
     repeat_penalty: LLMParam = RepeatPenalty()
     num_sequences: LLMParam = NumSequences()
+
+    # TODO: Need to check if there is a better way to do this!
+    _overrides: Any = None
+    """Store the over_ride info to set values after LLMParam object creation"""
+
+    @model_validator(mode="wrap")
+    @classmethod
+    def validate_config(
+        cls, values: Dict[str, Any], handler: ValidatorFunctionWrapHandler, _info: ValidationInfo
+    ) -> "LLMConfig":
+        """Validate the config"""
+        if "provider" in values:
+            values["name"] = f"{values['provider']}:{values['name']}"
+            # self.pop("provider", None)
+        if "model_type" in values:
+            values["mtype"] = LLMModelType(values["model_type"])
+
+        validated_self = handler(values)
+
+        # Setup Param Over-rides
+        for param in values.get("params", []):
+            pvalue = values["params"][param]
+            param_attr = getattr(validated_self, param, None)
+            if param_attr:
+                if pvalue:
+                    param_attr.update_values(**pvalue)
+                else:
+                    param_attr.active = False
+        return validated_self
+
+    @classmethod
+    def create_config(cls, model_config):
+        return cls(**model_config)
 
     def get_params(self) -> Dict[str, LLMParam]:
         """Return Parameters supported by the model"""

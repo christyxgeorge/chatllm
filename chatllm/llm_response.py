@@ -136,12 +136,12 @@ class LLMResponse(BaseModel):
         if self.prompt_tokens > 0 and self.prompt_tokens != prompt_count:
             logger.warning(
                 f"Prompt Token Count {prompt_count} is different "
-                "from the computed value: {self.prompt_tokens}"
+                f"from the computed value: {self.prompt_tokens}"
             )
         if self.completion_tokens > 0 and self.completion_tokens != completion_count:
             logger.warning(
                 f"Completion Token Count {completion_count} is different "
-                "from the computed value: {self.completion_tokens}"
+                f"from the computed value: {self.completion_tokens}"
             )
         self.prompt_tokens = prompt_count
         self.completion_tokens = completion_count
@@ -167,13 +167,11 @@ class LLMResponse(BaseModel):
 
     def print_summary(self) -> None:
         elapsed_time = (self.end_time - self.start_time).total_seconds()  # type: ignore[operator]
-        response_text = self.get_first_sequence()
         usage = {
             "prompt_tokens": self.prompt_tokens,
             "completion_tokens": self.completion_tokens,
             "total_tokens": self.prompt_tokens + self.completion_tokens,
         }
-        print(f"Response: {response_text}")  # noqa: T201
         print(f"    Model: {self.model}")  # noqa: T201
         print(f"    Computed Usage = {json.dumps(usage or {})}")  # noqa: T201
         if self.api_usage:

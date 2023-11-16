@@ -1,6 +1,7 @@
 """Language Model To Interface With OpenAI's API"""
 from __future__ import annotations
 
+import logging
 import os
 
 from typing import Any, AsyncGenerator, List, Tuple
@@ -21,6 +22,8 @@ from chatllm.llm_response import LLMResponse
 from chatllm.llms.base import BaseLLMProvider, LLMRegister
 from chatllm.prompts import PromptValue
 
+logger = logging.getLogger(__name__)
+
 
 class OpenAIConfig(LLMConfig):
     # Handle parameter variations
@@ -39,45 +42,24 @@ class OpenAIConfig(LLMConfig):
     length_penalty: LLMParam = LengthPenalty(active=False)
 
 
-@LLMRegister()
+@LLMRegister(config_class=OpenAIConfig)
 class OpenAIChat(BaseLLMProvider):
     """Abstract base class for interfacing with OpenAI language models."""
 
-    def __init__(self, model_name: str, **kwargs) -> None:
-        super().__init__(model_name, **kwargs)
+    def __init__(self, model_name: str, model_cfg: LLMConfig, **kwargs) -> None:
+        super().__init__(model_name, model_cfg, **kwargs)
         self.client = openai.ChatCompletion
         self.encoding = tiktoken.encoding_for_model(model_name)
         openai.api_key = os.environ.get("OPENAI_API_KEY")
 
     @classmethod
-    def get_supported_models(cls, verbose: bool = False) -> List[LLMConfig]:
+    def get_supported_models(cls, verbose: bool = False) -> List[str]:
         """Return a list of supported models."""
         openai.api_key = os.environ.get("OPENAI_API_KEY")
-        # model_list = openai.Model.list()
-        # model_list = [m["id"] for m in model_list["data"]]
-        # print(f"Open AI Model List = {len(model_list)} // {model_list}")
-        # model_list = [m for m in model_list if m.startswith("gpt")]
-        model_list: List[LLMConfig] = [
-            OpenAIConfig(
-                name="gpt-3.5-turbo", key="g35", desc="OpenAI GPT-3.5 Turbo", ctx=4096, cpt=0.01
-            ),
-            OpenAIConfig(
-                name="gpt-3.5-turbo-16k",
-                key="g35-16k",
-                desc="OpenAI GPT-3.5 Turbo",
-                ctx=16384,
-                cpt=0.01,
-            ),
-            OpenAIConfig(name="gpt-4", key="g4", desc="OpenAI GPT-4", ctx=4096, cpt=0.02),
-            OpenAIConfig(
-                name="gpt-3.5-turbo-instruct",
-                key="dv",
-                desc="OpenAI GPT-3.5 Turbo Instruct / Davinci",
-                ctx=4096,
-                cpt=0.005,
-            ),
-        ]
-        # return ["gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-4", "gpt-3.5-turbo-instruct"]
+        model_list = openai.Model.list()
+        model_list = [m["id"] for m in model_list["data"]]
+        logger.debug(f"Open AI Model List = {len(model_list)} // {model_list}")
+        model_list = [m for m in model_list if m.startswith("gpt")]
         return model_list
 
     async def load(self, **kwargs: Any) -> None:

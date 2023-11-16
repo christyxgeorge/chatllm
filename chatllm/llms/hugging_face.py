@@ -1,7 +1,9 @@
 """Language Model To Interface With Hugging Face Models"""
 from __future__ import annotations
 
+import glob
 import logging
+import os
 
 from typing import Any, AsyncGenerator, List
 
@@ -26,19 +28,18 @@ logger = logging.getLogger(__name__)
 
 class HuggingFaceConfig(LLMConfig):
     # Reference: https://huggingface.co/docs/transformers/main_classes/text_generation
-    # Handle parameter variations
     max_tokens: LLMParam = MaxTokens(name="max_new_tokens")
     temperature: LLMParam = Temperature(min=0, max=2, default=1)
     length_penalty: LLMParam = LengthPenalty(min=0, max=2, default=1)
     repeat_penalty: LLMParam = RepeatPenalty(name="repetition_penalty", min=0, max=2, default=1)
 
 
-@LLMRegister()
+@LLMRegister(config_class=HuggingFaceConfig)
 class HFPipeline(BaseLLMProvider):
     """Class for interfacing with HF models."""
 
-    def __init__(self, model_name: str, **kwargs) -> None:
-        super().__init__(model_name, **kwargs)
+    def __init__(self, model_name: str, model_cfg: LLMConfig, **kwargs) -> None:
+        super().__init__(model_name, model_cfg, **kwargs)
         self.llm = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True)
         self.tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
         if self.tokenizer.pad_token is None:
@@ -46,24 +47,17 @@ class HFPipeline(BaseLLMProvider):
         logger.info(f"Tokenizer initialized {self.tokenizer}")
 
     @classmethod
-    def get_supported_models(cls, verbose: bool = False) -> List[LLMConfig]:
+    def get_supported_models(cls, verbose: bool = False) -> List[str]:
         """Return a list of supported models."""
-        # TODO: Can load available models in the Local HF Cache ~/cache/huggingface/hub
-        model_list: List[LLMConfig] = [
-            HuggingFaceConfig(name="gpt2", key="g2", desc="OpenAI GPT2"),
-            HuggingFaceConfig(name="microsoft/phi-1_5", key="p15", desc="Microsoft Phi 1.5"),
-            HuggingFaceConfig(
-                name="roneneldan/TinyStories-33M", key="ts", desc="Microsoft Tiny Stories"
-            ),
-        ]
-        return model_list
-        # return [
-        #     "gpt2",
-        #     "microsoft/phi-1_5",
-        #     "roneneldan/TinyStories-33M",
-        #     # "replit/replit-code-v1_5-3b", # Does not work..
-        #     # "TheBloke/Llama-2-7B-fp16"], # Does not work!
-        # ]
+        model_dir = os.environ["HF_CACHE_DIR"]
+        data_glob = os.path.join(model_dir, "models--*")
+        files = sorted(glob.glob(data_glob))
+        # print(f"glob = {data_glob}, Files = {len(files)}")
+        models: List[str] = []
+        for f in files:
+            name = f"{os.path.basename(f)}".replace("models--", "").replace("--", "/")
+            models.append(name)
+        return models
 
     async def load(self, **kwargs: Any) -> None:
         """

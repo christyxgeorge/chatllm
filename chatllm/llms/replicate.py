@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 
 from typing import Any, AsyncGenerator, List, Tuple
 
@@ -38,7 +37,7 @@ class ReplicateConfig(LLMConfig):
     num_sequences: LLMParam = NumSequences(active=False)
 
 
-@LLMRegister()
+@LLMRegister(config_class=ReplicateConfig)
 class ReplicateApi(BaseLLMProvider):
     """Class for interfacing with Replicate models."""
 
@@ -52,32 +51,26 @@ class ReplicateApi(BaseLLMProvider):
         self.input_properties = {k: v for k, v in properties.items()}
 
     @classmethod
-    def get_supported_models(cls, verbose: bool = False) -> List[LLMConfig]:
+    def get_supported_models(cls, verbose: bool = False) -> List[str]:
         """Return a list of supported models."""
         llm_models_url = "https://api.replicate.com/v1/collections/language-models"
         api_key = os.environ.get("REPLICATE_API_TOKEN")
         response = requests.get(
             llm_models_url, timeout=30, headers={"Authorization": f"Token {api_key}"}
         )
-        models: List[LLMConfig] = []
+        models: List[str] = []
         if response.status_code == 200:
             models = []
             for x in response.json()["models"]:
                 name = f"{x['owner']}/{x['name']}"
-                m = re.search("-[0-9]+b", x["name"])
-                if m:
-                    params = m.group(0).strip("-")
-                    key = f"{x['name'][0]}{params}"
-                    models.append(ReplicateConfig(name=name, key=key, desc=x["description"]))
-                else:
-                    models.append(ReplicateConfig(name=name, desc=x["description"]))
+                models.append(name)
         else:
             logger.info("Unable to get LLM models from Replicate")
         return models
 
     async def load(self, **kwargs: Any) -> None:
         """
-        Load the model. Nothing to do in the case of LlamaCpp
+        Load the model. Nothing to do in the case of Replicate
         as we load the model in the constructor.
         """
         pass

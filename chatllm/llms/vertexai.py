@@ -4,11 +4,12 @@ from __future__ import annotations
 import logging
 import os
 
-from typing import Any, AsyncGenerator, List, Tuple, cast
+from typing import Any, AsyncGenerator, List, Tuple
 
 import vertexai
 
 from google.oauth2 import service_account
+from pydantic import model_validator
 from vertexai.language_models import (
     ChatModel,
     CodeChatModel,
@@ -26,13 +27,19 @@ from chatllm.llm_params import (
     RepeatPenalty,
     Temperature,
     TopK,
-    TopP,
 )
 from chatllm.llm_response import LLMResponse
 from chatllm.llms.base import BaseLLMProvider, LLMRegister
 from chatllm.prompts import PromptValue
 
 logger = logging.getLogger(__name__)
+
+VERTEX_CLASSES = {
+    "text_gen": TextGenerationModel,
+    "chat": ChatModel,
+    "code_chat": CodeChatModel,
+    "code_gen": CodeGenerationModel,
+}
 
 
 class VertexConfig(LLMConfig):
@@ -48,62 +55,18 @@ class VertexConfig(LLMConfig):
     top_k: LLMParam = TopK(min=0, max=40, default=40, step=10)
 
     # class to be used:
-    vertex_class: Any
+    vertex_class: Any = TextGenerationModel
+
+    @model_validator(mode="after")
+    @classmethod
+    def setup_vertex_class(cls, vconfig: Any) -> Any:
+        """Validate the config"""
+        model_type = vconfig.mtype.value
+        vconfig.vertex_class = VERTEX_CLASSES.get(model_type, TextGenerationModel)
+        return vconfig
 
 
-VERTEX_MODEL_LIST: List[VertexConfig] = [
-    VertexConfig(
-        name="chat-bison",
-        key="vcb",
-        desc="PaLM-2 for Chat",
-        ctx=8192,
-        cpt=0.0,
-        vertex_class=ChatModel,
-        mtype=LLMModelType.CHAT_MODEL,
-    ),
-    VertexConfig(
-        name="chat-bison-32k",
-        desc="PaLM-2 for Chat (32K)",
-        ctx=32768,
-        cpt=0.0,
-        vertex_class=ChatModel,
-        mtype=LLMModelType.CHAT_MODEL,
-    ),
-    VertexConfig(
-        name="text-bison",
-        key="vtb",
-        desc="PaLM-2 for Chat",
-        ctx=8192,
-        cpt=0.0,
-        vertex_class=TextGenerationModel,
-        mtype=LLMModelType.TEXT_GEN_MODEL,
-    ),
-    VertexConfig(
-        name="code-bison",
-        key="vcode",
-        desc="Codey for code generation",
-        top_p=TopP(active=False),
-        top_k=TopK(active=False),
-        ctx=6144,
-        cpt=0.0,
-        vertex_class=CodeGenerationModel,
-        mtype=LLMModelType.TEXT_GEN_MODEL,
-    ),
-    VertexConfig(
-        name="codechat-bison",
-        key="vcchat",
-        desc="Codey for code chat",
-        top_p=TopP(active=False),
-        top_k=TopK(active=False),
-        ctx=6144,
-        cpt=0.0,
-        vertex_class=CodeChatModel,
-        mtype=LLMModelType.CHAT_MODEL,
-    ),
-]
-
-
-@LLMRegister()
+@LLMRegister(config_class=VertexConfig)
 class VertexApi(BaseLLMProvider):
     """Class for interfacing with GCP Vertex.AI models."""
 
@@ -120,14 +83,16 @@ class VertexApi(BaseLLMProvider):
             staging_bucket=staging_bucket,
             credentials=credentials,
         )
-        llm_info = [mcfg for mcfg in VERTEX_MODEL_LIST if mcfg.name == model_name][0]
-        self.llm = llm_info.vertex_class.from_pretrained(model_name)
-        self.model_type = llm_info.mtype
+        assert isinstance(
+            self.model_cfg, VertexConfig
+        ), "Configuration not Vertex Specific"  # nosec
+        self.llm = self.model_cfg.vertex_class.from_pretrained(model_name)
+        self.model_type = self.model_cfg.mtype
 
     @classmethod
-    def get_supported_models(cls, verbose: bool = False) -> List[LLMConfig]:
+    def get_supported_models(cls, verbose: bool = False) -> List[str]:
         """Return a list of supported models."""
-        return cast(List[LLMConfig], VERTEX_MODEL_LIST)
+        return ["chat-bison", "chat-bison-32k", "text-bison", "code-bison", "codechat-bison"]
 
     async def load(self, **kwargs: Any) -> None:
         """

@@ -88,6 +88,7 @@ if __name__ == "__main__":
         if "shell" not in sys.argv:
             sys.argv.insert(1, "shell")
 
+        initialize_config(verbose=args.verbose, debug=args.debug)
         cli()  # pylint: disable=no-value-for-parameter
     else:
         initialize_config(verbose=args.verbose, debug=args.debug)

@@ -5,7 +5,7 @@ import re
 import textwrap
 import time
 
-from typing import TYPE_CHECKING, Any, Dict, List, NoReturn, Tuple
+from typing import TYPE_CHECKING, Dict, List, NoReturn
 
 import click
 
@@ -22,23 +22,7 @@ from chatllm.utils import set_env
 if TYPE_CHECKING:
     from chatllm.llm_controller import LLMController
 
-MODEL_INFO: Dict[str, str] = {
-    "g35": "open_ai:gpt-3.5-turbo",
-    "g4": "open_ai:gpt-4",
-    "dv": "open_ai:gpt-3.5-turbo-instruct",
-    "lc7b": "llama-cpp:llama-2-7b-chat.Q5_K_M.gguf",
-    "m7b": "llama-cpp:mistral-7b-openorca.Q5_K_M.gguf",
-    "l7b": "replicate:replicate/llama-7b",
-    "l13b": "replicate:replicate/llama-13b",
-    "l70b": "replicate:replicate/llama-70b",
-    "vicuna": "replicate:replicate/vicuna-13b",
-    "g2": "hf:gpt2",
-    "p15": "microsoft/phi-1_5",
-    "ts": "hf:roneneldan/TinyStories-33M",
-    "rcode": "hf:replit/replit-code-v1_5-3b",
-    "cp": "vertexai:chat-bison",
-    "tp": "vertexai:text-bison",
-}
+MODEL_INFO: Dict[str, str] = {}
 
 
 # ===========================================================================================
@@ -67,9 +51,13 @@ class ChatLLMContext(object):
 
     def __init__(self, model_key, *, verbose=False):
         self.verbose = verbose
-        self.mode = "batch"
         self.llm_controller = self._initialize_llm_controller()
         self.set_model(model_key)
+        self.streaming = True
+
+    @property
+    def model_name(self) -> str | None:
+        return self.llm_controller.model_name
 
     def _initialize_llm_controller(self) -> "LLMController":
         from chatllm.llm_controller import LLMController
@@ -79,78 +67,92 @@ class ChatLLMContext(object):
 
     def set_model(self, model_key=None) -> None:
         if model_key:
-            self.model_name = MODEL_INFO[model_key]
-            self.llm_controller.load_model(self.model_name)
+            model_name = MODEL_INFO[model_key]
+            self.llm_controller.load_model(model_name)
         else:
             self.llm_controller.load_model()
-            self.model_name = self.llm_controller.model_name
-        self.params = self.llm_controller.get_model_params()
-        self.vars = {k: v.default for k, v in self.params.items()}
 
-    def set(self, key: str, val: float | int) -> None:
-        """Set Parameter by key/value"""
-        if key in self.vars:
-            self.vars[key] = val
+        # TODO: Fix Vars/Params confusion!
+        params = self.llm_controller.get_model_params()
+        self.llm_params = {k: v.default for k, v in params.items()}
+
+    def set_llm_param(self, key: str, val: float | int) -> None:
+        """Set LLM Parameter by key/value"""
+        if key in self.llm_params:
+            self.llm_params[key] = val
         else:
-            click.echo(f"Invalid Variable: {key}, Valid Options are {self.vars.keys()}")
+            click.echo(f"Invalid Variable: {key}, Valid Options are {self.llm_params.keys()}")
 
-    def get(self, key: str) -> Any:
-        """Add Variable reference"""
-        return self.vars.get(key)
+    def load_models(self, modelfile: str | None = None) -> None:
+        # Re-initialize Model_INFO.
+        global MODEL_INFO
+        self.llm_controller.load_models(modelfile)
+        MODEL_INFO = self.llm_controller.get_model_key_map()
+        ctx = click.get_current_context()
+        for command in llm_group.list_commands(ctx):
+            cli.add_command(LLM(name=command))
+        self.show_model_info()
 
-    async def llm_stream(self, prompt_value: PromptValue, **llm_kwargs) -> Tuple[str, str]:
+    async def llm_stream(self, prompt_value: PromptValue, **llm_kwargs) -> str:
         stream = self.llm_controller.run_stream(
             prompt_value, verbose=self.verbose, word_by_word=True, **llm_kwargs
         )
-        click.echo("Response: ", nl=False)
+        start = True
         async for response_type, response_text in stream:
+            if start:
+                click.echo("Response: ", nl=False)
+                start = False
             assert response_type not in [
                 "error",
                 "warning",
             ], f"{response_text}"  # nosec
             click.echo(response_text, nl=False)
-            # await asyncio.sleep(1)  # Sleep to check if this is working!
-        click.echo("")  # New line
-        return "content", ""
+            if response_type == "done":
+                click.echo("")  # New line
+        return ""
 
-    def llm_run(self, prompt: str, model_key: str | None = None, **kwargs):
+    async def llm_batch(self, prompt_value: PromptValue, **llm_kwargs) -> str:
+        batch_gen = self.llm_controller.run_batch(prompt_value, verbose=self.verbose, **llm_kwargs)
+        async for response_type, response_text in batch_gen:
+            response = response_text.strip()
+            click.echo(f"Response [{response_type}]:\n{response}")
+        return response
+
+    def llm_run(self, prompt: str, model_key: str | None = None, **kwargs) -> str:
         """Common Function to execute an llm run"""
         try:
             start_time = time.time()
-            if model_key and self.model_name != MODEL_INFO[model_key]:
+            current_model = self.model_name
+            if model_key and current_model != MODEL_INFO[model_key]:
                 self.set_model(model_key)
-            llm_kwargs = {k: v.default for k, v in self.params.items()}
-            llm_kwargs.update(**self.vars)  # Update with the current variables
+            llm_kwargs = {**self.llm_params}  # Set with the current LLM Values
             llm_kwargs.update(**kwargs)  # Update with any over-rides specified in kwargs
-            click.echo(f"Arguments to LLM [{self.model_name}]: {llm_kwargs}")
             prompt_value = self.llm_controller.create_prompt_value(prompt, chat_history=[])
-            if self.mode == "stream":
-                response_type, response = asyncio.run(self.llm_stream(prompt_value, **llm_kwargs))
+            if self.streaming:
+                response = asyncio.run(self.llm_stream(prompt_value, **llm_kwargs))
             else:
-                response_type, response = asyncio.run(
-                    self.llm_controller.run_batch(prompt_value, verbose=self.verbose, **llm_kwargs)
-                )
-                click.echo(f"Response [{response_type}]:\n{response.strip()}")
+                response = asyncio.run(self.llm_batch(prompt_value, **llm_kwargs))
             time_taken = time.time() - start_time
-            click.echo(f"== Time taken = {time_taken:.2f} secs")
-            return response.strip()
+            click.echo(f"== Total Time taken = {time_taken:.2f} secs")
+            return response
         except Exception as exc:  # pylint: disable=broad-exception-caught
             msg = f"Error Encountered: {exc}"
             click.echo(msg)
             return msg
 
     def show_model_info(self) -> None:
-        click.echo(Fore.GREEN + Style.BRIGHT + "Available Models:")
+        click.echo(Fore.GREEN + Style.BRIGHT + "Installed Models:")
         for mkey, mname in MODEL_INFO.items():
             if mname == self.model_name:
-                click.echo(Fore.RED + f" ** {mkey}: {mname} ==> Active" + Fore.GREEN)
+                click.echo(Fore.RED + f" ** {mkey:10s}: {mname} ==> Active" + Fore.GREEN)
             else:
-                click.echo(f"    {mkey}: {mname}")
+                click.echo(f"    {mkey:10s}: {mname}")
         click.echo(Style.RESET_ALL)
 
     def show_params(self) -> None:
-        for pkey, pval in self.params.items():
-            click.echo(Fore.RED + f"{pkey}: {self.vars.get(pkey, 'N/A')}" + Fore.RESET)
+        params = self.llm_controller.get_model_params()
+        for pkey, pval in params.items():
+            click.echo(Fore.RED + f"{pkey}: {self.llm_params.get(pkey, 'N/A')}" + Fore.RESET)
             click.echo(Fore.CYAN + f"    {pval.label} [{pval.description}]" + Fore.RESET)
             click.echo(f"    Min: {pval.minimum}, Max: {pval.maximum}, Default: {pval.default}")
 
@@ -167,13 +169,14 @@ class ChatLLMContext(object):
 
     def show_context_info(self) -> None:
         """Show the key ChatLLM variables"""
+        mode = "stream" if self.streaming else "batch"
         click.echo("\n")
         click.echo(
             Fore.CYAN
             + Style.BRIGHT
             + "[Context]\n"
-            + f"    Model = {self.model_name} [Mode: {self.mode}],\n"
-            + f"    Parameters = {self.vars},\n"
+            + f"    Model = {self.model_name} [Mode: {mode}],\n"
+            + f"    Parameters = {self.llm_params},\n"
             + f"    Verbose = {self.verbose}\n"
             + Style.RESET_ALL
         )
@@ -190,7 +193,7 @@ class ChatLLMContext(object):
     context_settings={"token_normalize_func": normalize_token},
 )
 @click.pass_context
-@click.option("--verbose/--no-verbose", default=False)
+@click.option("-v", "--verbose", is_flag=True, default=False)
 @click.option(
     "-m",
     "--model",
@@ -211,6 +214,7 @@ def cli(ctx, model_key, verbose):
 
         for command in llm_group.list_commands(ctx):
             cli.add_command(LLM(name=command))
+
         # Add the context only the first time!
         ctx.obj = ChatLLMContext(model_key, verbose=verbose)
 
@@ -225,7 +229,7 @@ def help(ctx) -> None:  # pylint: disable=redefined-builtin
 
 @cli.command(name="shell")
 @click.pass_obj
-@click.option("--verbose/--no-verbose", default=False)
+@click.option("-v", "--verbose", is_flag=True, default=False)
 @click.option("--debug/--no-debug", default=False)
 def shell_start(obj, verbose, debug):
     """Start the shell"""
@@ -285,7 +289,7 @@ def toggle_verbose(obj):
 def model_key(obj, model_key):
     """List Models/Set Model"""
     if model_key == "null":
-        obj.show_model_info()
+        obj.show_context_info()
     elif model_key in MODEL_INFO:
         obj.set_model(model_key)
         obj.show_context_info()
@@ -299,10 +303,10 @@ def model_key(obj, model_key):
 def llm_mode(obj, mode) -> None:
     """Set Model mode ('stream' or 'batch')"""
     if mode.startswith("stream"):
-        obj.mode = "stream"
+        obj.streaming = True
         obj.show_context_info()
     elif mode.startswith("batch"):
-        obj.mode = "batch"
+        obj.streaming = False
         obj.show_context_info()
     else:
         click.echo(f"Invalid Mode: {mode}, Valid Options are 'stream' or 'batch'")
@@ -312,7 +316,7 @@ def llm_mode(obj, mode) -> None:
 @click.pass_obj
 def llm_mode_stream(obj) -> None:
     """Set Model mode to 'stream'"""
-    obj.mode = "stream"
+    obj.streaming = True
     obj.show_context_info()
 
 
@@ -320,19 +324,19 @@ def llm_mode_stream(obj) -> None:
 @click.pass_obj
 def llm_mode_batch(obj) -> None:
     """Set Model mode to 'batch'"""
-    obj.mode = "batch"
+    obj.streaming = False
     obj.show_context_info()
 
 
 @cli.command(
-    name="vars",
+    name="params",
     context_settings=dict(
         ignore_unknown_options=True,
         allow_extra_args=True,
     ),
 )
 @click.pass_obj
-def set_var(obj) -> None:
+def set_llm_params(obj) -> None:
     """
     Simple way to list / set multiple Parameters to send to the LLM.
     Usage: set a=b c=d e=f,g h ## e has multiple values and h is boolean
@@ -344,7 +348,7 @@ def set_var(obj) -> None:
     else:
         arg_vars = [item.split("=") if "=" in item else [item, "true"] for item in ctx.args]
         for key, value in arg_vars:
-            obj.set(key, value)
+            obj.set_llm_param(key, value)
         obj.show_context_info()
 
 
@@ -371,13 +375,30 @@ def set_system_prompt(obj, prompt_type):
 # ===========================================================================================
 
 
-@cli.command(name="providers")
+@cli.command(name="models")
 @click.pass_obj
-def list_providers(obj) -> None:
-    """List Providers"""
-    click.echo("Providers:")
-    for provider in obj.llm_controller.get_provider_list():
-        click.echo(f"    {provider}")
+@click.argument("action", default=None, required=False)
+@click.argument("modelfile", default=None, required=False)
+@click.option("-p", "--provider", is_flag=True)
+def model_list(obj, action, modelfile=None, provider=False):
+    """List Models/Set Model"""
+    click.echo("")  # Just a newline!
+    if action == "add" and modelfile:
+        obj.load_models(modelfile)
+
+    elif action == "all":
+        click.echo(Fore.CYAN + "Available Models by provider:" + Fore.RESET)
+        provider_map = obj.llm_controller.supported_model_list()
+        for prov, models in provider_map.items():
+            click.echo(f"    {prov} [{len(models)}] => {models}")
+    else:  # Default Action!
+        if provider:
+            click.echo(Fore.CYAN + "Installed Models by provider:" + Fore.RESET)
+            provider_map = obj.llm_controller.provider_models
+            for prov, models in provider_map.items():
+                click.echo(f"    {prov} [{len(models)}] => {models}")
+        else:
+            obj.show_model_info()
 
 
 @cli.command(
@@ -388,9 +409,9 @@ def list_providers(obj) -> None:
     ),
 )
 @click.pass_obj
-def run_query(obj) -> None:
+def start_chat(obj) -> None:
     """
-    Run the given query on the current active model
+    Start new chat session with the current active model and run the user query.
     """
     ctx = click.get_current_context()
     if not ctx.args:
@@ -398,6 +419,26 @@ def run_query(obj) -> None:
     else:
         prompt = " ".join(ctx.args)
         click.echo(f"Invoked Active LLM [{obj.model_name}] with prompt, {prompt}")
+        return obj.llm_run(prompt)
+
+
+@cli.command(
+    name="c",
+    context_settings=dict(
+        ignore_unknown_options=True,
+        allow_extra_args=True,
+    ),
+)
+@click.pass_obj
+def continue_chat(obj) -> None:
+    """
+    Continue the existing chat session
+    """
+    ctx = click.get_current_context()
+    if not ctx.args:
+        obj.show_params()
+    else:
+        prompt = " ".join(ctx.args)
         return obj.llm_run(prompt)
 
 
@@ -433,7 +474,7 @@ class LLM(click.Command):
 
 
 @click.command(cls=LLMGroup)
-def llm_group():
+def llm_group() -> None:
     """LLM Commands"""
     pass
 

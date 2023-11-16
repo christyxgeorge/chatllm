@@ -4,7 +4,6 @@ from __future__ import annotations
 import glob
 import logging
 import os
-import re
 
 from typing import Any, AsyncGenerator, Dict, List, Tuple, cast
 
@@ -38,35 +37,29 @@ class LlamaCppConfig(LLMConfig):
     length_penalty: LLMParam = LengthPenalty(active=False)
 
 
-@LLMRegister()
+@LLMRegister(config_class=LlamaCppConfig)
 class LlamaCpp(BaseLLMProvider):
     """Class for interfacing with Llama.cpp GGUF models."""
 
-    def __init__(self, model_name: str, **kwargs) -> None:
-        super().__init__(model_name, **kwargs)
-        model_dir = os.environ["CHATLLM_ROOT"] + "/models"
+    def __init__(self, model_name: str, model_cfg: LLMConfig, **kwargs) -> None:
+        super().__init__(model_name, model_cfg, **kwargs)
+        model_dir = os.environ["LOCAL_GGUF_MODEL_DIR"]
         model_path = f"{model_dir}/{model_name}"
         # Note: Default context in llama-cpp is 512!
         self.llm = Llama(model_path=model_path, n_ctx=2048, verbose=False)
         self.num_sequences = 1
 
     @classmethod
-    def get_supported_models(cls, verbose: bool = False) -> List[LLMConfig]:
+    def get_supported_models(cls, verbose: bool = False) -> List[str]:
         """Return a list of supported models."""
-        model_dir = os.environ["CHATLLM_ROOT"] + "/models"
+        model_dir = os.environ["LOCAL_GGUF_MODEL_DIR"]
         data_glob = os.path.join(model_dir, "*.gguf")
         files = sorted(glob.glob(data_glob))
         # print(f"glob = {data_glob}, Files = {len(files)}")
-        models: List[LLMConfig] = []
+        models: List[str] = []
         for f in files:
             name = f"{os.path.basename(f)}"
-            m = re.search("-[0-9]+b-", name)
-            if m:
-                params = m.group(0).strip("-")
-                key = f"lc{name[0]}{params}"
-                models.append(LlamaCppConfig(name=name, key=key))
-            else:
-                models.append(LlamaCppConfig(name=name))
+            models.append(name)
         return models
 
     async def load(self, **kwargs: Any) -> None:

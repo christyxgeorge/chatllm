@@ -117,7 +117,7 @@ def mode_changed(state: gr.State, active_mode: str):
     return state
 
 
-def system_prompt_changed(system_prompt: str):
+def system_prompt_changed(system_prompt: str) -> None:
     llm_controller.set_system_prompt("custom", system_prompt)
 
 
@@ -142,7 +142,11 @@ def _handle_response(response_type, response_text, chat_history):
         raise gr.Error(f"{response_type.upper()}: {response_text}")
     elif response_type == "warning":
         gr.Warning(f"{response_type.upper()}: {response_text}")
-    else:  # Add it to the chat_history
+    elif response_type == "done":
+        # Do Nothing if it is `done`
+        pass
+    else:
+        # Add it to the chat_history
         chat_history[-1][1] = response_text
 
 
@@ -155,7 +159,6 @@ async def submit_query(state: gr.State, chat_history):
     verbose = state.get("verbose", False)
     if state["stream_mode"]:
         stream = llm_controller.run_stream(prompt_value=prompt_value, verbose=verbose, **kwargs)
-        # print(f"Stream type = {type(stream)}")
         async for response_type, response_text in stream:  # type: ignore
             _handle_response(response_type, response_text, chat_history)
             yield chat_history, gr.Button(visible=False), gr.Button(visible=True)

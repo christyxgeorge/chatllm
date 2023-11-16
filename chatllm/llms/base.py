@@ -6,6 +6,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any, AsyncGenerator, Dict, List, Type
 
+from chatllm.llm_params import LLMConfig
 from chatllm.llm_response import LLMResponse
 from chatllm.prompts import PromptValue
 
@@ -15,24 +16,25 @@ logger = logging.getLogger(__name__)
 class LLMRegister(object):
     """Class Decorater to register the list of supported models"""
 
-    def __init__(self):
-        self.llms = {}
+    def __init__(self, *, config_class: Type[LLMConfig]) -> None:
+        self.config_class = config_class
 
     def __call__(self, clz: Type[BaseLLMProvider]) -> Type[BaseLLMProvider]:
         """Register the list of supported models"""
-        llm_key = clz.__module__.split(".")[-1]  # Use Module/Package Name (file name)
-        logger.info(f"Adding LLM Provider = {llm_key} // {clz}")
-        BaseLLMProvider.register_llm(llm_key, clz)
+        provider_key = clz.__module__.split(".")[-1]  # Use Module/Package Name (file name)
+        logger.info(f"Adding LLM Provider = {provider_key} // {clz} // {self.config_class}")
+        BaseLLMProvider.register_provider(provider_key, clz, self.config_class)
         return clz
 
 
 class BaseLLMProvider(ABC):
     """Abstract base class for interfacing with language models."""
 
-    llm_models: Dict[str, Any] = {}
+    llm_providers: Dict[str, Dict[str, Any]] = {}
 
-    def __init__(self, model_name: str, **kwargs: Any) -> None:
+    def __init__(self, model_name: str, model_cfg: LLMConfig, **kwargs: Any) -> None:
         self.model_name = model_name
+        self.model_cfg = model_cfg
         self.llm_args = kwargs  # TODO: This is currently unused
 
     @property
@@ -41,17 +43,24 @@ class BaseLLMProvider(ABC):
         return self.model_name
 
     @staticmethod
-    def register_llm(llm_key, llm_class) -> None:
-        """Class Decorater to register the list of supported models"""
-        BaseLLMProvider.llm_models[llm_key] = {
-            "class": llm_class,
-            "models": llm_class.get_supported_models(),
+    def register_provider(provider_key: str, provider_class, config_class: Type[LLMConfig]) -> None:
+        BaseLLMProvider.llm_providers[provider_key] = {
+            "class": provider_class,
+            "config_class": config_class,
         }
 
+    @classmethod
+    def model_config(cls, model_config: Dict[str, Any]) -> LLMConfig:
+        """Load the model config."""
+        provider_key = model_config["provider"]
+        config_class = BaseLLMProvider.llm_providers[provider_key]["config_class"]
+        llm_config = config_class.create_config(model_config)
+        return llm_config
+
     @staticmethod
-    def registered_models() -> Dict[str, Any]:
-        """Return a list of supported models."""
-        return BaseLLMProvider.llm_models
+    def provider_class(provider):
+        provider_info = BaseLLMProvider.llm_providers[provider]
+        return provider_info["class"]
 
     @abstractmethod
     async def load(self, **kwargs: Any) -> None:

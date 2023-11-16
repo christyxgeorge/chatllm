@@ -1,0 +1,176 @@
+[
+  {
+    "provider": "open_ai",
+    "name": "gpt-3.5-turbo",
+    "description": "OpenAI GPT-3.5 Turbo",
+    "key": "g35",
+    "model_type": "chat",
+    "max_context_length": 4096,
+    "billing_model": "token",
+    "cost_per_token": 0.000000
+  },
+  {
+    "provider": "open_ai",
+    "name": "gpt-3.5-turbo-16k",
+    "description": "OpenAI GPT-3.5 Turbo [16K Context]",
+    "key": "g35-16k",
+    "model_type": "chat",
+    "max_context_length": 16384,
+    "billing_model": "token",
+    "cost_per_token": 0.000000
+  },
+  {
+    "provider": "open_ai",
+    "name": "gpt-3.5-turbo-instruct",
+    "description": "OpenAI GPT-3.5 Turbo Instruct [Da Vinci]",
+    "key": "dv",
+    "model_type": "instruct",
+    "max_context_length": 4096,
+    "billing_model": "token",
+    "cost_per_token": 0.000000
+  },
+  {
+    "provider": "open_ai",
+    "name": "gpt-4",
+    "description": "OpenAI GPT-4",
+    "key": "g4",
+    "model_type": "chat",
+    "tokenizer_name_or_path": "tiktoken",
+    "max_context_length": 4096,
+    "billing_model": "token",
+    "cost_per_token": 0.000000
+  },
+  {
+    "provider": "hugging_face",
+    "name": "gpt2",
+    "description": "OpenAI GPT-2 on HF",
+    "key": "g2",
+    "model_type": "chat",
+    "max_context_length": 1024,
+    "billing_model": "token",
+    "cost_per_token": 0.000000
+  },
+  {
+    "provider": "hugging_face",
+    "name": "microsoft/phi-1_5",
+    "description": "Microsoft Phi 1.5",
+    "key": "p15",
+    "model_type": "chat",
+    "max_context_length": 1024,
+    "billing_model": "token",
+    "cost_per_token": 0.000000
+  },
+  {
+    "provider": "hugging_face",
+    "name": "roneneldan/TinyStories-33M",
+    "description": "Microsoft Tiny Stories",
+    "key": "ts",
+    "model_type": "text_gen",
+    "max_context_length": 1024,
+    "billing_model": "token",
+    "cost_per_token": 0.000000
+  },
+  {
+    "provider": "palm2",
+    "name": "chat-bison",
+    "description": "PaLM-2 for Chat",
+    "key": "pcb",
+    "model_type": "chat",
+    "max_context_length": 8192,
+    "billing_model": "char",
+    "cost_per_token": 0.000000
+  },
+  {
+    "provider": "palm2",
+    "name": "text-bison",
+    "description": "PaLM-2 for Text Generation",
+    "key": "ptb",
+    "model_type": "text_gen",
+    "max_context_length": 8192,
+    "billing_model": "char",
+    "cost_per_token": 0.000000
+  },
+  {
+    "provider": "vertexai",
+    "name": "chat-bison",
+    "description": "PaLM-2 for Chat",
+    "key": "vcb",
+    "model_type": "chat",
+    "max_context_length": 8192,
+    "billing_model": "char",
+    "cost_per_token": 0.000000
+  },
+  {
+    "provider": "vertexai",
+    "name": "chat-bison-32k",
+    "description": "PaLM-2 for Chat [32K Context]",
+    "key": "vcb32",
+    "model_type": "chat",
+    "max_context_length": 32768,
+    "billing_model": "char",
+    "cost_per_token": 0.000000
+  },
+  {
+    "provider": "vertexai",
+    "name": "text-bison",
+    "description": "PaLM-2 for Text Generation",
+    "key": "vtb",
+    "model_type": "text_gen",
+    "max_context_length": 8192,
+    "billing_model": "char",
+    "cost_per_token": 0.000000
+  },
+  {
+    "provider": "vertexai",
+    "name": "code-bison",
+    "description": "Codey for Code Generation",
+    "model_type": "code_gen",
+    "max_context_length": 6144,
+    "billing_model": "char",
+    "cost_per_token": 0.000000,
+    "params": {
+      "top_p": null,
+      "top_k": null
+    }
+  },
+  {
+    "provider": "vertexai",
+    "name": "codechat-bison",
+    "description": "Codey for code chat",
+    "model_type": "code_chat",
+    "max_context_length": 32768,
+    "billing_model": "char",
+    "cost_per_token": 0.000000,
+    "params": {
+      "top_p": null,
+      "top_k": null
+    }
+  },
+  {
+    "provider": "replicate",
+    "name": "replicate/llama-2-70b-chat",
+    "key": "l70b",
+    "description": "Llama 70B [Replicate]",
+    "model_type": "chat",
+    "billing_model": "token",
+    "cost_per_token": 0.000000
+  },
+  {
+    "provider": "replicate",
+    "name": "replit/replit-code-v1-3b",
+    "key": "rcode",
+    "description": "Replit Code [Replicate]",
+    "model_type": "code_gen",
+    "billing_model": "token",
+    "cost_per_token": 0.000000
+  },
+  {
+    "provider": "replicate",
+    "name": "replicate/vicuna-13b",
+    "key": "vicuna",
+    "description": "Vicuna 13B [Replicate]",
+    "model_type": "instruct",
+    "billing_model": "token",
+    "cost_per_token": 0.000000
+  }
+]

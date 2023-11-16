@@ -1,0 +1,43 @@
+[
+  {
+    "provider": "llama_cpp",
+    "name": "codellama-7b-instruct.Q5_K_M.gguf",
+    "description": "Code Llama 7B [Instruct] - Q5_K_M",
+    "key": "codellama",
+    "model_type": "instruct",
+    "max_context_length": 4096,
+    "billing_model": "token",
+    "cost_per_token": 0.000000
+  },
+  {
+    "provider": "llama_cpp",
+    "name": "mistral-7b-openorca.Q5_K_M.gguf",
+    "description": "Mistral 7B fine tune with OpenOrca - Q5_K_M",
+    "key": "mistral",
+    "model_type": "instruct",
+    "max_context_length": 4096,
+    "billing_model": "token",
+    "cost_per_token": 0.000000
+  },
+  {
+    "provider": "llama_cpp",
+    "name": "llama-2-7b-chat.Q5_K_M.gguf",
+    "description": "Llama 7B - Q5_K_M",
+    "key": "l7b",
+    "model_type": "chat",
+    "max_context_length": 4096,
+    "billing_model": "token",
+    "cost_per_token": 0.000000
+  },
+  {
+  "provider": "llama_cpp",
+  "name": "zephyr-7b-beta.Q5_K_M.gguf",
+  "description": "Zephyr 7B - Q5_K_M",
+  "key": "zephyr",
+  "model_type": "chat",
+  "max_context_length": 4096,
+  "billing_model": "token",
+  "cost_per_token": 0.000000
+}
+
+]

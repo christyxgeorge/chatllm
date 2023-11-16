@@ -2,6 +2,7 @@
 import functools
 import json
 import logging
+import os
 
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
@@ -17,8 +18,6 @@ from chatllm.prompts import (
 )
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_MODEL = "open_ai:gpt-3.5-turbo"
 
 simple_system_prompt = """\
 You are a helpful, respectful and honest assistant. \
@@ -39,13 +38,64 @@ false information.
 class LLMController:
     """A chat Controller for conversational models."""
 
+    provider_models: Dict[str, List[str]] = {}  # Array of provider to models
+    llm_models: Dict[str, LLMConfig] = {}  # Array of models to model config
+
     def __init__(self) -> None:
         self.model_name = None
         self.llm = None
         self.model_config: LLMConfig | None = None
         self.system_prompt_type = "simple"
         self.system_prompt = simple_system_prompt
-        # print("Initializing LLM Controller")
+
+    @staticmethod
+    def load_models(mfile=None) -> None:
+        """Load Models from model definition file"""
+        model_file = mfile or "models.json"
+        models_file = os.environ["CHATLLM_ROOT"] + "/chatllm/data/" + model_file
+        logger.info(f"Loading Models from {models_file}")
+        models_loaded = 0
+        with open(models_file) as f:
+            models = json.load(f)
+            model_keys = [llm_config.key for llm_config in LLMController.llm_models.values()]
+            for model_config in models:
+                provider_class = BaseLLMProvider.provider_class(model_config["provider"])
+                llm_config = provider_class.model_config(model_config)
+                logger.debug(f"LLM Config = {llm_config}")
+
+                # Add to provider map and model map
+                prov_models = LLMController.provider_models.get(model_config["provider"], [])
+                if llm_config.name in prov_models or llm_config.name in LLMController.llm_models:
+                    logger.warning(
+                        f"Duplicate model {llm_config.name} for provider {model_config['provider']}"
+                    )
+                elif llm_config.key and llm_config.key in model_keys:
+                    logger.warning(
+                        f"Duplicate model key {llm_config.key} for provider {model_config['provider']}"
+                    )
+                else:
+                    models_loaded += 1
+                    prov_models.append(llm_config.name)
+                    LLMController.provider_models[model_config["provider"]] = prov_models
+                    LLMController.llm_models[llm_config.name] = llm_config
+                    model_keys.append(llm_config.key)
+
+            logger.info(
+                f"Loaded {models_loaded} out of {len(models)} models in file "
+                f"[Total: {len(LLMController.llm_models)}]"
+            )
+
+    @staticmethod
+    def get_model_key_map() -> Dict[str, str]:
+        """Return model key to model name mapping (for use in CLI)"""
+        if not LLMController.llm_models:
+            LLMController.load_models()
+        model_key_map = {
+            model_cfg.key: model_name
+            for model_name, model_cfg in LLMController.llm_models.items()
+            if model_cfg.key
+        }
+        return model_key_map
 
     def sortby_provider(self, x, y) -> int:
         prov_x = x.split(":")[0]
@@ -61,55 +111,36 @@ class LLMController:
             )
             return idx_x - idx_y
 
-    def get_provider_list(self) -> List[str]:
-        """Return the list of providers"""
-        model_map = BaseLLMProvider.registered_models()
-        return list(model_map.keys())
-
     def get_model_list(self) -> List[str]:
-        """Return the list of models"""
-        model_map = BaseLLMProvider.registered_models()
-        models = [
-            f"{llm_key}:{m.name}"
-            for llm_key, llm_info in model_map.items()
-            for m in llm_info["models"]
-        ]
+        """Return the sorted list of models"""
+        if not LLMController.llm_models:
+            LLMController.load_models()
+        models = LLMController.llm_models.keys()
         sorted_models = sorted(models, key=functools.cmp_to_key(self.sortby_provider))
         return sorted_models
 
-    def get_provider_model_list(self, provider) -> List[str]:
+    def supported_model_list(self) -> Dict[str, List[str]]:
+        """Return the sorted list of models"""
+        providers = BaseLLMProvider.llm_providers.keys()
+        model_map = {}
+        for provider in providers:
+            provider_class = BaseLLMProvider.provider_class(provider)
+            model_names = provider_class.get_supported_models()
+            model_map[provider] = model_names
+        return model_map
+
+    def provider_model_list(self, provider) -> List[str]:
         """return the list of models for the specified provider"""
-        model_map = BaseLLMProvider.registered_models()
-
-        models = [
-            f"{llm_key}:{m}"
-            for llm_key, llm_info in model_map.items()
-            for m in llm_info["models"]
-            if llm_key == provider
-        ]
-        return models
-
-    @staticmethod
-    def get_model_key_map() -> Dict[str, str]:
-        """Return model key to model name mapping (for use in CLI)"""
-        model_map = BaseLLMProvider.registered_models()
-        model_key_map = {
-            m.key: f"{llm_key}:{m.name}"
-            for llm_key, llm_info in model_map.items()
-            for m in llm_info["models"]
-            if m.key
-        }
-        return model_key_map
+        return LLMController.provider_models.get(provider, [])
 
     def load_model(self, model=None):
         """Load the model"""
-        model_map = BaseLLMProvider.registered_models()
         self.model_name = model or self.get_model_list()[0]
-        llm_key, model_name = self.model_name.split(":")
-        llm_info = model_map.get(llm_key)
-        self.llm = llm_info["class"](model_name=model_name)
-        self.model_config = [mcfg for mcfg in llm_info["models"] if mcfg.name == model_name][0]
-        logger.info(f"Loaded Model: {llm_key}:{model_name}")
+        llm_cfg = LLMController.llm_models.get(self.model_name)
+        provider, model_name = self.model_name.split(":")
+        provider_class = BaseLLMProvider.provider_class(provider)
+        self.llm = provider_class(model_name=model_name, model_cfg=llm_cfg)
+        self.model_config = llm_cfg
         # asyncio.run(self.llm.load())
 
     def get_model_params(self) -> Dict[str, LLMParam]:
@@ -182,6 +213,7 @@ class LLMController:
                     finish_reasons = "|".join(llm_response.finish_reasons)
                     yield "warning", f"No response from LLM [Reason = {finish_reasons}]"
 
+            yield "done", ""
             if verbose:
                 llm_response.print_summary()
 
@@ -205,13 +237,13 @@ class LLMController:
         try:
             llm_response = await self.llm.generate(prompt_value, verbose=verbose, **kwargs)
             response_text = llm_response.get_first_sequence()
+            if not response_text:
+                yield "warning", "No response from LLM"
+            else:
+                yield "content", response_text
             if verbose:
                 llm_response.print_summary()
 
-            if not response_text:
-                return "warning", "No response from LLM"
-
-            return "content", response_text
         except Exception as e:
             logger.warning(f"Exception = {e}")
-            return "error", f"Unable to generate response [{e}]"
+            yield "error", f"Unable to generate response [{e}]"

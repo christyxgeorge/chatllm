@@ -4,9 +4,11 @@ from __future__ import annotations
 import logging
 import os
 
-from typing import Any, AsyncGenerator, List, Tuple, cast
+from typing import Any, AsyncGenerator, List, Tuple
 
 import google.generativeai as palm
+
+from pydantic import model_validator
 
 from chatllm.llm_params import (
     LengthPenalty,
@@ -44,57 +46,60 @@ class Palm2Config(LLMConfig):
     palm_model_name: str = ""
     palm_supported_methods: List[str] = []
 
+    @model_validator(mode="after")
+    @classmethod
+    def setup_palm2_model_info(cls, pconfig: Any) -> Any:
+        """Validate the config"""
+        palm_models = Palm2Api.get_palm_models()
+        pmodel_prefix = pconfig.name.replace("palm2:", "models/")
+        palm_model = [pm for pm in palm_models if pm.name.startswith(pmodel_prefix)][0]
+        if palm_model:
+            pconfig.palm_model_name = palm_model.name
+            pconfig.palm_supported_methods = palm_model.supported_generation_methods
+        return pconfig
 
-PALM2_MODEL_LIST: List[Palm2Config] = [
-    Palm2Config(name="chat-bison", key="pcb", desc="PaLM-2 for Chat", ctx=8192, cpt=0.0),
-    Palm2Config(
-        name="text-bison",
-        key="ptb",
-        desc="PaLM-2 for Text Generation",
-        ctx=8192,
-        cpt=0.0,
-    ),
-]
 
-
-@LLMRegister()
+@LLMRegister(config_class=Palm2Config)
 class Palm2Api(BaseLLMProvider):
     """Class for interfacing with GCP PaLM2 models."""
 
-    def __init__(self, model_name: str, **kwargs) -> None:
-        super().__init__(model_name, **kwargs)
+    palm_models: List[Any] = []
+
+    def __init__(self, model_name: str, model_cfg: LLMConfig, **kwargs) -> None:
+        super().__init__(model_name, model_cfg, **kwargs)
         # credentials_file = os.environ.get("GCLOUD_CREDENTIALS_FILE")
         # credentials = service_account.Credentials.from_service_account_file(credentials_file)
         # palm.configure(credentials=credentials)
         palm.configure(api_key=os.environ["PALM2_API_KEY"])
         self.llm = palm
-        palm_models = [m for m in PALM2_MODEL_LIST if m.name == self.model_name]
-        palm_model = palm_models[0] if palm_models else None
-        self.palm_model_name = palm_model.palm_model_name if palm_model else None
-        self.supported_methods = palm_model.palm_supported_methods if palm_model else []
+        assert isinstance(model_cfg, Palm2Config), "Configuration File not PALM Specific"  # nosec
+        self.palm_model_name = model_cfg.palm_model_name
+        self.supported_methods = model_cfg.palm_supported_methods
         logger.info(f"Supported Methods: {self.supported_methods}")
 
-    @classmethod
-    def get_supported_models(cls, verbose: bool = False) -> List[LLMConfig]:
+    @staticmethod
+    def get_palm_models() -> List[Any]:
         """Return a list of supported models."""
-        palm.configure(api_key=os.environ["PALM2_API_KEY"])
-        mlist = palm.list_models()
-        model_list = [model for model in mlist]
+        if not Palm2Api.palm_models:
+            palm.configure(api_key=os.environ["PALM2_API_KEY"])
+            pmodels = palm.list_models()
+            # Convert the Generator Object to a list
+            Palm2Api.palm_models = [m for m in pmodels]
+        return Palm2Api.palm_models
+
+    @classmethod
+    def get_supported_models(cls, verbose: bool = False) -> List[str]:
+        """Return a list of supported models."""
+
+        palm_models = Palm2Api.get_palm_models()
         if verbose:
-            logger.info(f"Model List = {model_list}")
-        # TODO: Can use defaults for ctx, top_p, top_k, temp, etc. from the API response
-        for model in PALM2_MODEL_LIST:
-            palm_models = [m for m in model_list if m.name.startswith(f"models/{model.name}")]
-            palm_model = palm_models[0] if palm_models else None
-            if palm_model:
-                model.palm_model_name = palm_model.name
-                model.palm_supported_methods = palm_model.supported_generation_methods
-        model_list = [m for m in PALM2_MODEL_LIST if m.palm_model_name]
-        return cast(List[LLMConfig], model_list)
+            logger.info(f"PALM2 Model List = {palm_models}")
+        models = [m.name.replace("models/", "") for m in palm_models]
+        return models
 
     async def load(self, **kwargs: Any) -> None:
         """
-        Load the model. Nothing to do in the case of LlamaCpp
+        Load the model. Nothing to do in the case of Palm2
         as we load the model in the constructor.
         """
         pass
