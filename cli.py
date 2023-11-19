@@ -360,6 +360,32 @@ def set_system_prompt(obj, prompt_type):
         )
 
 
+@cli.command(name="clear")
+@click.pass_obj
+def llm_clear_history(obj) -> None:
+    """Clear History'"""
+    obj.llm_controller.clear_history()
+
+
+@cli.command(name="history")
+@click.pass_obj
+def llm_show_history(obj) -> None:
+    """Show History"""
+    history = obj.llm_controller.session.chat_history
+    if history or obj.llm_controller.session.system_prompt:
+        click.echo(
+            Fore.CYAN + f"System [{obj.llm_controller.session.system_prompt_type}]:" + Fore.RESET,
+            nl=False,
+        )
+        click.echo(f"{obj.llm_controller.session.system_prompt}")
+    if history:
+        for entry in history:
+            click.echo(Fore.CYAN + f"{entry.role.value.capitalize()}:" + Fore.RESET, nl=False)
+            click.echo(f"{entry.text}")
+    else:
+        click.echo("No History Entries found\n")
+
+
 # ===========================================================================================
 # LLM Commands
 # ===========================================================================================
@@ -399,9 +425,9 @@ def model_list(obj, action, modelfile=None, provider=False):
     ),
 )
 @click.pass_obj
-def start_chat(obj) -> None:
+def user_query(obj) -> None:
     """
-    Start new chat session with the current active model and run the user query.
+    Run the user query on the current user session.
     """
     ctx = click.get_current_context()
     if not ctx.args:
@@ -409,26 +435,6 @@ def start_chat(obj) -> None:
     else:
         prompt = " ".join(ctx.args)
         click.echo(f"Invoked Active LLM [{obj.model_name}] with prompt, {prompt}")
-        return obj.llm_run(prompt)
-
-
-@cli.command(
-    name="c",
-    context_settings=dict(
-        ignore_unknown_options=True,
-        allow_extra_args=True,
-    ),
-)
-@click.pass_obj
-def continue_chat(obj) -> None:
-    """
-    Continue the existing chat session
-    """
-    ctx = click.get_current_context()
-    if not ctx.args:
-        obj.show_params()
-    else:
-        prompt = " ".join(ctx.args)
         return obj.llm_run(prompt)
 
 

@@ -107,6 +107,9 @@ class LLMController:
         """Change the model, Create new session"""
         if not self.session or self.session.llm.model_name != model:
             self.session = self.create_session(model)
+        else:
+            logger.info(f"Model {model} already loaded, clearing history")
+            self.session.clear_history()
         return self.session
 
     def create_session(self, model=None) -> LLMSession:
