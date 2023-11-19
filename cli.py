@@ -16,7 +16,6 @@ from prompt_toolkit.application import get_app
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.history import FileHistory  # , InMemoryHistory
 
-from chatllm.prompts.prompt_value import PromptValue
 from chatllm.utils import set_env
 
 MODEL_INFO: Dict[str, str] = {}
@@ -49,7 +48,7 @@ class ChatLLMContext(object):
     def __init__(self, llm_controller, model_key, *, verbose=False):
         self.verbose = verbose
         self.llm_controller = llm_controller
-        self.session = self.llm_controller.session
+        self.session = self.set_model()
         self.streaming = True
 
     @property
@@ -62,6 +61,7 @@ class ChatLLMContext(object):
 
         params = self.session.get_model_params()
         self.llm_params = {k: v.default for k, v in params.items()}
+        return self.session
 
     def set_llm_param(self, key: str, val: float | int) -> None:
         """Set LLM Parameter by key/value"""
@@ -80,9 +80,9 @@ class ChatLLMContext(object):
             cli.add_command(LLM(name=command))
         self.show_model_info()
 
-    async def llm_stream(self, prompt_value: PromptValue, **llm_kwargs) -> str:
+    async def llm_stream(self, user_query: str, **llm_kwargs) -> str:
         stream = self.session.run_stream(
-            prompt_value, verbose=self.verbose, word_by_word=True, **llm_kwargs
+            user_query, verbose=self.verbose, word_by_word=True, **llm_kwargs
         )
         start = True
         async for response_type, response_text in stream:
@@ -98,14 +98,15 @@ class ChatLLMContext(object):
                 click.echo("")  # New line
         return ""
 
-    async def llm_batch(self, prompt_value: PromptValue, **llm_kwargs) -> str:
-        batch_gen = self.session.run_batch(prompt_value, verbose=self.verbose, **llm_kwargs)
+    async def llm_batch(self, user_query: str, **llm_kwargs) -> str:
+        batch_gen = self.session.run_batch(user_query, verbose=self.verbose, **llm_kwargs)
         async for response_type, response_text in batch_gen:
-            response = response_text.strip()
-            click.echo(f"Response [{response_type}]:\n{response}")
+            if response_type != "done":
+                response = response_text.strip()
+                click.echo(f"Response [{response_type}]:\n{response}")
         return response
 
-    def llm_run(self, prompt: str, model_key: str | None = None, **kwargs) -> str:
+    def llm_run(self, user_query: str, model_key: str | None = None, **kwargs) -> str:
         """Common Function to execute an llm run"""
         try:
             start_time = time.time()
@@ -114,11 +115,10 @@ class ChatLLMContext(object):
                 self.set_model(model_key)
             llm_kwargs = {**self.llm_params}  # Set with the current LLM Values
             llm_kwargs.update(**kwargs)  # Update with any over-rides specified in kwargs
-            prompt_value = self.session.create_prompt_value(prompt, chat_history=[])
             if self.streaming:
-                response = asyncio.run(self.llm_stream(prompt_value, **llm_kwargs))
+                response = asyncio.run(self.llm_stream(user_query, **llm_kwargs))
             else:
-                response = asyncio.run(self.llm_batch(prompt_value, **llm_kwargs))
+                response = asyncio.run(self.llm_batch(user_query, **llm_kwargs))
             time_taken = time.time() - start_time
             click.echo(f"== Total Time taken = {time_taken:.2f} secs")
             return response

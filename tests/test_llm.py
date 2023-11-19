@@ -6,7 +6,6 @@ from typing import Any, Tuple, cast
 import pytest
 
 from chatllm.llm_controller import LLMController
-from chatllm.prompts import PromptValue
 from chatllm.prompts.default_prompts import simple_system_prompt
 
 logger = logging.getLogger(__name__)
@@ -60,9 +59,9 @@ class TestLLMGeneration:
             pvalue = pytestconfig.getoption(param)  # pytestconfig = request.config
             logger.info(f"   {param.replace('_', ' ').capitalize()} = {pvalue}")
 
-    def _setup_provider_model(
+    def _setup_prompt_params(
         self, llm_controller, mode, provider_model, prompt=None, **kwargs
-    ) -> Tuple[PromptValue, dict[Any, Any]]:
+    ) -> Tuple[str, dict[Any, Any]]:
         llm_controller.change_model(provider_model)
         params = llm_controller.session.get_model_params()
         llm_kwargs = {k: v.default for k, v in params.items()}
@@ -70,10 +69,8 @@ class TestLLMGeneration:
 
         provider, model = provider_model.split(":", maxsplit=2)
         logger.info(f"Running [{mode}] test for {provider}, model = {model}")
-        prompt = prompt or random.choice(EXAMPLES)[0]  # nosec
-        prompt_value = llm_controller.session.create_prompt_value(prompt)
-        logger.info(f"Prompt: {prompt_value}")
-        return prompt_value, llm_kwargs
+        user_query = prompt or random.choice(EXAMPLES)[0]  # nosec
+        return user_query, llm_kwargs
 
     @pytest.mark.asyncio
     async def test_batch(self, request, provider_model) -> None:
@@ -81,16 +78,17 @@ class TestLLMGeneration:
             pytest.mark.skip("Skipping batch test")
         else:
             llm_controller: LLMController = cast(LLMController, pytest.llm_controller)
-            prompt_value, llm_kwargs = self._setup_provider_model(
+            user_query, llm_kwargs = self._setup_prompt_params(
                 llm_controller, "batched", provider_model, max_tokens=100
             )
-            stream = llm_controller.session.run_batch(prompt_value, **llm_kwargs)
+            stream = llm_controller.session.run_batch(user_query, **llm_kwargs)
             async for response_type, response_text in stream:
                 assert response_type not in [
                     "error",
                     "warning",
                 ], f"{response_text}"  # nosec
-                logger.info(f"Response [{response_type}]: {response_text}")
+                if response_type != "done":
+                    logger.info(f"Response [{response_type}]: {response_text}")
 
     @pytest.mark.asyncio
     async def test_stream(self, request, provider_model) -> None:
@@ -98,10 +96,10 @@ class TestLLMGeneration:
             pytest.mark.skip("Skipping stream test")
         else:
             llm_controller: LLMController = cast(LLMController, pytest.llm_controller)
-            prompt_value, llm_kwargs = self._setup_provider_model(
+            user_query, llm_kwargs = self._setup_prompt_params(
                 llm_controller, "streamed", provider_model, max_tokens=100
             )
-            stream = llm_controller.session.run_stream(prompt_value, **llm_kwargs)
+            stream = llm_controller.session.run_stream(user_query, **llm_kwargs)
             async for response_type, response_text in stream:  # type:ignore
                 assert response_type not in [
                     "error",

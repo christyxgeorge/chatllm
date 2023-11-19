@@ -77,7 +77,9 @@ def close_parameters() -> gr.Accordion:
 
 
 # Event Handlers Implemented
-def model_changed(state: gr.State, model_name: str, parameters: List[gr.Slider]):
+def model_changed(
+    state: gr.State, model_name: str, chatbot: List[str], parameters: List[gr.Slider]
+):
     """Handle Model Change"""
     param_keys = [p.elem_id for p in parameters]
     param_values = {k: {"value": v} for k, v in state["params"].items()}
@@ -91,6 +93,7 @@ def model_changed(state: gr.State, model_name: str, parameters: List[gr.Slider])
             values = {k: v["value"] for k, v in param_values.items()}
             state["params"] = values
             state["model"] = model_name
+            chatbot = []  # Clear the chat history
         except Exception as e:
             logger.warning(f"Error loading model {model_name}: {e}")
             gr.Info(f"Unable to load model {model_name}... Using {state['model']}")
@@ -100,7 +103,7 @@ def model_changed(state: gr.State, model_name: str, parameters: List[gr.Slider])
     return (
         state,
         state["model"],
-        [],  # chatbot - Clear the chat history
+        chatbot,
         gr.Accordion(open=True, visible=True),  # parameter_row - Open and visible
         *gr_sliders,
     )
@@ -155,28 +158,31 @@ async def submit_query(state: gr.State, chat_history):
     params = llm_controller.session.get_model_params()
     kwargs = {k: v for k, v in state["params"].items() if k in params}
     user_query = chat_history[-1][0]
-    prompt_value = llm_controller.session.create_prompt_value(user_query, chat_history)
     verbose = state.get("verbose", False)
     if state["stream_mode"]:
-        stream = llm_controller.session.run_stream(
-            prompt_value=prompt_value, verbose=verbose, **kwargs
-        )
+        stream = llm_controller.session.run_stream(user_query, verbose=verbose, **kwargs)
         async for response_type, response_text in stream:  # type: ignore
             _handle_response(response_type, response_text, chat_history)
             yield chat_history, gr.Button(visible=False), gr.Button(visible=True)
         # Last yield to restore the submit button
         yield chat_history, gr.Button(visible=True), gr.Button(visible=False)
     else:
-        response_type, response_text = await llm_controller.session.run_batch(
-            prompt_value=prompt_value, verbose=verbose, **kwargs
-        )
-        _handle_response(response_type, response_text, chat_history)
+        batch_gen = llm_controller.session.run_batch(user_query, verbose=verbose, **kwargs)
+        async for response_type, response_text in batch_gen:
+            if response_type != "done":
+                response = response_text.strip()
+                _handle_response(response_type, response, chat_history)
         yield chat_history, gr.Button(visible=True), gr.Button(visible=False)
 
 
 def stop_btn_clicked():
     # TODO: Need to check if we can/need to actually stop the query
     return gr.Button(visible=True), gr.Button(visible=False)
+
+
+def clear_btn_clicked():
+    llm_controller.clear_history()
+    return []
 
 
 # ===========================================================================================
@@ -252,7 +258,7 @@ def setup_gradio(verbose=False):
                     ).style(container=False)
                     submit_btn = gr.Button(value="Submit", scale=2, visible=True, variant="primary")
                     stop_btn = gr.Button(value="Stop", scale=2, visible=False, variant="stop")
-                    gr.ClearButton(
+                    clear_btn = gr.ClearButton(
                         [chatbot],
                         value="🗑️ Clear history",
                         scale=2,
@@ -278,8 +284,8 @@ def setup_gradio(verbose=False):
             inputs=[],
             outputs=[parameter_row],
         ).then(
-            lambda x, y, *params: model_changed(x, y, parameters),
-            inputs=[state, model_dropdown, *parameters],
+            lambda x, y, z, *params: model_changed(x, y, z, parameters),
+            inputs=[state, model_dropdown, chatbot, *parameters],
             outputs=[state, model_dropdown, chatbot, parameter_row, *parameters],
         )
         stream_mode.change(
@@ -352,6 +358,7 @@ def setup_gradio(verbose=False):
             outputs=[chatbot, submit_btn, stop_btn],
         )
         stop_btn.click(stop_btn_clicked, [], outputs=[submit_btn, stop_btn])
+        clear_btn.click(clear_btn_clicked, [], outputs=[chatbot])
 
         demo.load(
             lambda x, *params: load_demo(x, parameters, verbose=verbose),

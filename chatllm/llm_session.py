@@ -1,7 +1,7 @@
 import json
 import logging
 
-from typing import Any, AsyncGenerator, Dict, Optional
+from typing import Any, AsyncGenerator, Dict
 
 from pydantic import BaseModel
 
@@ -20,12 +20,11 @@ logger = logging.getLogger(__name__)
 
 class LLMHistoryItem(BaseModel):
     text: str
-    role: str
-    token_count: int
+    role: ChatRole
 
 
 class LLMSession:
-    entries: list[LLMHistoryItem] = []
+    chat_history: list[LLMHistoryItem] = []
 
     def __init__(self, llm, model_name, model_cfg) -> None:
         self.llm = llm
@@ -38,8 +37,11 @@ class LLMSession:
         assert self.model_config is not None, f"Model {self.model_name} not loaded"  # nosec
         return self.model_config.get_params()
 
-    def add_history(self, text: str, role: str, token_count: int) -> None:
-        self.entries.append(LLMHistoryItem(text=text, role=role, token_count=token_count))
+    def add_history(self, text: str, role: ChatRole) -> None:
+        self.chat_history.append(LLMHistoryItem(text=text, role=role))
+
+    def clear_history(self) -> None:
+        self.chat_history = []
 
     def set_system_prompt(self, type: str, prompt: str = "") -> None:
         """Set the system prompt"""
@@ -50,41 +52,41 @@ class LLMSession:
             self.system_prompt_type = "none"
             self.system_prompt = ""
 
-    def create_prompt_value(self, user_query, chat_history=[]) -> PromptValue:
+    def create_prompt_value(self, user_query) -> PromptValue:
         """Create a PromptValue object"""
-        prompt_value: Optional[PromptValue] = None
-        if self.system_prompt or len(chat_history) > 1:
+        if self.system_prompt:
             prompt_value = ChatPromptValue()
-            if self.system_prompt:
+            if self.system_prompt or self.chat_history:
                 prompt_value.add_message(
                     ChatMessage(role=ChatRole.SYSTEM, content=self.system_prompt)
                 )
-            for user_msg, ai_msg in chat_history:
-                if user_msg:
-                    prompt_value.add_message(ChatMessage(role=ChatRole.USER, content=user_msg))
-                if ai_msg:
-                    prompt_value.add_message(ChatMessage(role=ChatRole.AI, content=ai_msg))
-            if not chat_history:
-                # User Query is included in the chat history.. Add only when there is no chat_history # noqa: E501
-                prompt_value.add_message(ChatMessage(role=ChatRole.USER, content=user_query))
+            for msg in self.chat_history:
+                prompt_value.add_message(ChatMessage(role=msg.role, content=msg.text))
+            # Add the User Query
+            prompt_value.add_message(ChatMessage(role=ChatRole.USER, content=user_query))
+            return prompt_value
         else:
-            prompt_value = StringPromptValue(text=user_query)
-        return prompt_value
+            sprompt_value = StringPromptValue(text=user_query)
+            return sprompt_value
 
     async def run_stream(
         self,
-        prompt_value: PromptValue,
+        user_query: str,
         verbose=False,
         word_by_word=False,
         **kwargs,
     ) -> AsyncGenerator[Any | str, Any]:
         assert self.llm is not None, f"Model {self.model_name} not loaded"  # nosec
+
+        # TODO: Need to move this out to the CLI/Gradio layer?
         if verbose:
             logger.info("=" * 50)
-            logger.info(f"Prompt = {type(prompt_value)} / {prompt_value}")
+            logger.info(f"Prompt = {user_query}")
             logger.info(f"Model: {self.llm.model_name}, Params = {json.dumps(kwargs or {})}")
 
         try:
+            prompt_value: PromptValue = self.create_prompt_value(user_query)
+            self.add_history(user_query, role=ChatRole.USER)
             stream = await self.llm.generate_stream(prompt_value, verbose=verbose, **kwargs)
             async for llm_response in stream:
                 response_text = (
@@ -99,6 +101,7 @@ class LLMSession:
                     yield "warning", f"No response from LLM [Reason = {finish_reasons}]"
 
             yield "done", ""
+            self.add_history(llm_response.get_first_sequence(), role=ChatRole.AI)
             if verbose:
                 llm_response.print_summary()
 
@@ -109,23 +112,28 @@ class LLMSession:
 
     async def run_batch(
         self,
-        prompt_value: PromptValue,
+        user_query: str,
         verbose=False,
         **kwargs,
     ) -> Any:
         assert self.llm is not None, f"Model {self.model_name} not loaded"  # nosec
         if verbose:
             logger.info("=" * 50)
-            logger.info(f"Prompt = {prompt_value}")
+            logger.info(f"User Query = {user_query}")
             logger.info(f"Model: {self.llm.model_name}, Params = {json.dumps(kwargs or {})}")
 
         try:
+            prompt_value: PromptValue = self.create_prompt_value(user_query)
+            self.add_history(user_query, role=ChatRole.USER)
             llm_response = await self.llm.generate(prompt_value, verbose=verbose, **kwargs)
             response_text = llm_response.get_first_sequence()
             if not response_text:
                 yield "warning", "No response from LLM"
             else:
                 yield "content", response_text
+
+            yield "done", ""
+            self.add_history(llm_response.get_first_sequence(), role=ChatRole.AI)
             if verbose:
                 llm_response.print_summary()
 

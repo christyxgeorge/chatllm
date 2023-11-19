@@ -129,3 +129,7 @@ class LLMController:
             "none": "",
             "custom": "",
         }
+
+    def clear_history(self) -> None:
+        """Clear the history"""
+        self.session.clear_history()
