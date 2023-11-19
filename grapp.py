@@ -47,8 +47,8 @@ examples = [
 def load_demo(model_name, parameters: List[gr.Slider], verbose=False):
     """Load the Demo"""
     param_keys = [p.elem_id for p in parameters]
-    llm_controller.load_model(model_name)
-    params = llm_controller.get_model_params()
+    session = llm_controller.session
+    params = session.get_model_params()
     param_values = {k: LLMParam.get_param_values(params.get(k)) for k in param_keys}
     values = {k: v["value"] for k, v in param_values.items()}
     state = {
@@ -85,8 +85,8 @@ def model_changed(state: gr.State, model_name: str, parameters: List[gr.Slider])
         """Load Model only if the model has changed"""
         try:
             logger.info(f"Changing model from {state['model']} to {model_name}")
-            llm_controller.load_model(model_name)
-            params = llm_controller.get_model_params()
+            llm_controller.change_model(model_name)
+            params = llm_controller.session.get_model_params()
             param_values = {k: LLMParam.get_param_values(params.get(k, None)) for k in param_keys}
             values = {k: v["value"] for k, v in param_values.items()}
             state["params"] = values
@@ -118,7 +118,7 @@ def mode_changed(state: gr.State, active_mode: str):
 
 
 def system_prompt_changed(system_prompt: str) -> None:
-    llm_controller.set_system_prompt("custom", system_prompt)
+    llm_controller.session.set_system_prompt("custom", system_prompt)
 
 
 def vote(data: gr.LikeData):
@@ -152,20 +152,22 @@ def _handle_response(response_type, response_text, chat_history):
 
 async def submit_query(state: gr.State, chat_history):
     # Pop out unsupported kwargs
-    params = llm_controller.get_model_params()
+    params = llm_controller.session.get_model_params()
     kwargs = {k: v for k, v in state["params"].items() if k in params}
     user_query = chat_history[-1][0]
-    prompt_value = llm_controller.create_prompt_value(user_query, chat_history)
+    prompt_value = llm_controller.session.create_prompt_value(user_query, chat_history)
     verbose = state.get("verbose", False)
     if state["stream_mode"]:
-        stream = llm_controller.run_stream(prompt_value=prompt_value, verbose=verbose, **kwargs)
+        stream = llm_controller.session.run_stream(
+            prompt_value=prompt_value, verbose=verbose, **kwargs
+        )
         async for response_type, response_text in stream:  # type: ignore
             _handle_response(response_type, response_text, chat_history)
             yield chat_history, gr.Button(visible=False), gr.Button(visible=True)
         # Last yield to restore the submit button
         yield chat_history, gr.Button(visible=True), gr.Button(visible=False)
     else:
-        response_type, response_text = await llm_controller.run_batch(
+        response_type, response_text = await llm_controller.session.run_batch(
             prompt_value=prompt_value, verbose=verbose, **kwargs
         )
         _handle_response(response_type, response_text, chat_history)
@@ -182,6 +184,7 @@ def stop_btn_clicked():
 # ===========================================================================================
 
 llm_controller = LLMController()
+llm_session = llm_controller.change_model()
 
 
 def setup_gradio(verbose=False):
@@ -213,7 +216,7 @@ def setup_gradio(verbose=False):
                         visible=True,
                     )
                     system_prompt = gr.Textbox(
-                        value=llm_controller.system_prompt,
+                        value=llm_controller.session.system_prompt,
                         label="System prompt (Optional)",
                         placeholder="Enter the System prompt and place enter",
                         scale=8,

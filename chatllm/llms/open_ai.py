@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import os
 
-from typing import Any, AsyncGenerator, List, Tuple
+from typing import Any, AsyncGenerator, Dict, List, Tuple, Union
 
 import openai
 import tiktoken
@@ -23,6 +23,7 @@ from chatllm.llms.base import BaseLLMProvider, LLMRegister
 from chatllm.prompts import PromptValue
 
 logger = logging.getLogger(__name__)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 class OpenAIConfig(LLMConfig):
@@ -48,7 +49,9 @@ class OpenAIChat(BaseLLMProvider):
 
     def __init__(self, model_name: str, model_cfg: LLMConfig, **kwargs) -> None:
         super().__init__(model_name, model_cfg, **kwargs)
-        self.client = openai.ChatCompletion
+        self.client = (
+            openai.ChatCompletion if self.model_cfg.mtype.is_chat_model else openai.Completion
+        )
         self.encoding = tiktoken.encoding_for_model(model_name)
         openai.api_key = os.environ.get("OPENAI_API_KEY")
 
@@ -72,17 +75,36 @@ class OpenAIChat(BaseLLMProvider):
         # print(f"Encoding = {tokens}")
         return len(tokens)
 
-    def format_prompt(self, prompt_value: PromptValue) -> Tuple[list[dict[str, str]], int]:
+    def format_prompt(
+        self, prompt_value: PromptValue
+    ) -> Tuple[Union[List[dict[str, str]], str], int]:
         """Format the prompt for OpenAI"""
-        formatted_prompt = prompt_value.to_messages()
-        return formatted_prompt, self.get_token_count(prompt_value.to_string())
+        formatted_prompt = (
+            prompt_value.to_messages()
+            if self.model_cfg.mtype.is_chat_model
+            else prompt_value.to_string()
+        )
+        return formatted_prompt, self.get_token_count(prompt_value.to_string())  # type: ignore
 
-    def validate_kwargs(self, **kwargs):
+    def validate_kwargs(self, **kwargs) -> Dict[str, Any]:
         """Validate the kwargs for the model"""
         # Rename 'num_sequences' to 'n', repeat_penalty to freq_penalty
         kwargs["n"] = kwargs.pop("num_sequences", 1)
         kwargs["frequency_penalty"] = kwargs.pop("repeat_penalty", 0.0)
         return kwargs
+
+    def get_openai_args(self, openai_prompt, streaming: bool, **kwargs):
+        """Get the arguments for the LLM call"""
+        openai_kwargs = {
+            "model": self.model_name,
+            "stream": streaming,
+        }
+        openai_kwargs.update(kwargs)
+        if self.model_cfg.mtype.is_chat_model:
+            openai_kwargs["messages"] = openai_prompt
+        else:
+            openai_kwargs["prompt"] = openai_prompt
+        return openai_kwargs
 
     async def generate(
         self,
@@ -94,15 +116,12 @@ class OpenAIChat(BaseLLMProvider):
         openai_prompt, num_tokens = self.format_prompt(prompt_value)
         validated_kwargs = self.validate_kwargs(**kwargs)
         llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)
-
+        openai_kwargs = self.get_openai_args(openai_prompt, False, **validated_kwargs)
         # TODO: Need to support tenacity to retry errors!
-        response = await self.client.acreate(
-            model=self.model_name,
-            messages=openai_prompt,
-            stream=False,
-            **validated_kwargs,
+        response = await self.client.acreate(**openai_kwargs)
+        llm_response.set_openai_response(
+            response, chat_completion=self.model_cfg.mtype.is_chat_model
         )
-        llm_response.set_openai_response(response)
         return llm_response
 
     async def generate_stream(
@@ -119,17 +138,16 @@ class OpenAIChat(BaseLLMProvider):
         llm_response = LLMResponse(
             model=self.model, num_sequences=num_sequences, prompt_tokens=num_tokens
         )
-
-        stream = await self.client.acreate(
-            model=self.model_name,
-            messages=openai_prompt,
-            stream=True,
-            **validated_kwargs,
-        )
+        openai_kwargs = self.get_openai_args(openai_prompt, True, **validated_kwargs)
+        stream = await self.client.acreate(**openai_kwargs)
 
         async def async_generator() -> AsyncGenerator[Any | str, Any]:
             async for response_delta in stream:
-                llm_response.add_openai_delta(response_delta)
+                if self.model_cfg.mtype.is_chat_model:
+                    llm_response.add_openai_delta(response_delta)
+                else:
+                    text_delta = [c["text"] for c in response_delta["choices"]]
+                    llm_response.add_delta(text_delta)
                 yield llm_response
 
         return async_generator()

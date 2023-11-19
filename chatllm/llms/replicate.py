@@ -45,7 +45,10 @@ class ReplicateApi(BaseLLMProvider):
         super().__init__(model_name, **kwargs)
 
         rep_model = replicate.models.get(model_name)
-        model_version = rep_model.versions.list()[0]  # Get the latest version
+        model_versions = rep_model.versions.list()
+        if len(model_versions) == 0:
+            raise ValueError(f"Unable to find a version for {model_name} in Replicate")
+        model_version = model_versions[0]  # Get the latest version
         properties = model_version.openapi_schema["components"]["schemas"]["Input"]["properties"]
         self.llm = model_version
         self.input_properties = {k: v for k, v in properties.items()}

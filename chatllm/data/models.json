@@ -108,7 +108,8 @@
     "model_type": "chat",
     "max_context_length": 32768,
     "billing_model": "char",
-    "cost_per_token": 0.000000
+    "cost_per_token": 0.000000,
+    "preview": true
   },
   {
     "provider": "vertexai",
@@ -152,15 +153,6 @@
     "key": "l70b",
     "description": "Llama 70B [Replicate]",
     "model_type": "chat",
-    "billing_model": "token",
-    "cost_per_token": 0.000000
-  },
-  {
-    "provider": "replicate",
-    "name": "replit/replit-code-v1-3b",
-    "key": "rcode",
-    "description": "Replit Code [Replicate]",
-    "model_type": "code_gen",
     "billing_model": "token",
     "cost_per_token": 0.000000
   },

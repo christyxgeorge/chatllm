@@ -5,7 +5,7 @@ import re
 import textwrap
 import time
 
-from typing import TYPE_CHECKING, Dict, List, NoReturn
+from typing import Dict, List, NoReturn
 
 import click
 
@@ -18,9 +18,6 @@ from prompt_toolkit.history import FileHistory  # , InMemoryHistory
 
 from chatllm.prompts.prompt_value import PromptValue
 from chatllm.utils import set_env
-
-if TYPE_CHECKING:
-    from chatllm.llm_controller import LLMController
 
 MODEL_INFO: Dict[str, str] = {}
 
@@ -49,31 +46,21 @@ def normalize_token(token_name: str) -> str:
 class ChatLLMContext(object):
     """Chat Context"""
 
-    def __init__(self, model_key, *, verbose=False):
+    def __init__(self, llm_controller, model_key, *, verbose=False):
         self.verbose = verbose
-        self.llm_controller = self._initialize_llm_controller()
-        self.set_model(model_key)
+        self.llm_controller = llm_controller
+        self.session = self.llm_controller.session
         self.streaming = True
 
     @property
     def model_name(self) -> str | None:
         return self.llm_controller.model_name
 
-    def _initialize_llm_controller(self) -> "LLMController":
-        from chatllm.llm_controller import LLMController
-
-        llm_controller = LLMController()
-        return llm_controller
-
     def set_model(self, model_key=None) -> None:
-        if model_key:
-            model_name = MODEL_INFO[model_key]
-            self.llm_controller.load_model(model_name)
-        else:
-            self.llm_controller.load_model()
+        model_name = MODEL_INFO.get(model_key, None)
+        self.session = self.llm_controller.change_model(model_name)
 
-        # TODO: Fix Vars/Params confusion!
-        params = self.llm_controller.get_model_params()
+        params = self.session.get_model_params()
         self.llm_params = {k: v.default for k, v in params.items()}
 
     def set_llm_param(self, key: str, val: float | int) -> None:
@@ -94,7 +81,7 @@ class ChatLLMContext(object):
         self.show_model_info()
 
     async def llm_stream(self, prompt_value: PromptValue, **llm_kwargs) -> str:
-        stream = self.llm_controller.run_stream(
+        stream = self.session.run_stream(
             prompt_value, verbose=self.verbose, word_by_word=True, **llm_kwargs
         )
         start = True
@@ -112,7 +99,7 @@ class ChatLLMContext(object):
         return ""
 
     async def llm_batch(self, prompt_value: PromptValue, **llm_kwargs) -> str:
-        batch_gen = self.llm_controller.run_batch(prompt_value, verbose=self.verbose, **llm_kwargs)
+        batch_gen = self.session.run_batch(prompt_value, verbose=self.verbose, **llm_kwargs)
         async for response_type, response_text in batch_gen:
             response = response_text.strip()
             click.echo(f"Response [{response_type}]:\n{response}")
@@ -127,7 +114,7 @@ class ChatLLMContext(object):
                 self.set_model(model_key)
             llm_kwargs = {**self.llm_params}  # Set with the current LLM Values
             llm_kwargs.update(**kwargs)  # Update with any over-rides specified in kwargs
-            prompt_value = self.llm_controller.create_prompt_value(prompt, chat_history=[])
+            prompt_value = self.session.create_prompt_value(prompt, chat_history=[])
             if self.streaming:
                 response = asyncio.run(self.llm_stream(prompt_value, **llm_kwargs))
             else:
@@ -150,7 +137,7 @@ class ChatLLMContext(object):
         click.echo(Style.RESET_ALL)
 
     def show_params(self) -> None:
-        params = self.llm_controller.get_model_params()
+        params = self.session.get_model_params()
         for pkey, pval in params.items():
             click.echo(Fore.RED + f"{pkey}: {self.llm_params.get(pkey, 'N/A')}" + Fore.RESET)
             click.echo(Fore.CYAN + f"    {pval.label} [{pval.description}]" + Fore.RESET)
@@ -160,9 +147,9 @@ class ChatLLMContext(object):
         click.echo("\nSystem Prompts:\n")
         system_prompts = self.llm_controller.get_system_prompt_list()
         for ptype, prompt in system_prompts.items():
-            active = "**" if ptype == self.llm_controller.system_prompt_type else "  "
+            active = "**" if ptype == self.session.system_prompt_type else "  "
             prompt = "\n".join(textwrap.wrap(prompt, subsequent_indent="    "))
-            if ptype == self.llm_controller.system_prompt_type:
+            if ptype == self.session.system_prompt_type:
                 click.echo(Fore.RED + f" {active} {ptype}: {prompt}\n" + Fore.RESET)
             else:
                 click.echo(f" {active} {ptype}: {prompt}\n")
@@ -208,15 +195,18 @@ def cli(ctx, model_key, verbose):
     if not ctx.obj:
         from chatllm.llm_controller import LLMController
 
+        # Create LLMController
+        llm_controller = LLMController(verbose=verbose)
+
         # Initialize Model_INFO. Needs to be done before the llm_group.list_commands is called
         global MODEL_INFO
-        MODEL_INFO = LLMController.get_model_key_map()
+        MODEL_INFO = llm_controller.get_model_key_map()
 
         for command in llm_group.list_commands(ctx):
             cli.add_command(LLM(name=command))
 
         # Add the context only the first time!
-        ctx.obj = ChatLLMContext(model_key, verbose=verbose)
+        ctx.obj = ChatLLMContext(llm_controller, model_key, verbose=verbose)
 
 
 @cli.command()

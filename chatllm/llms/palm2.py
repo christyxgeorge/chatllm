@@ -42,6 +42,8 @@ class Palm2Config(LLMConfig):
     num_sequences: LLMParam = NumSequences(name="candidate_count", min=1, max=8, default=1)
     top_k: LLMParam = TopK(min=0, max=40, default=40, step=10)
 
+    billing_model: str = "char"  # Character based billing!
+
     # Variables from the PALM ListModels API
     palm_model_name: str = ""
     palm_supported_methods: List[str] = []
@@ -210,6 +212,6 @@ class Palm2Api(BaseLLMProvider):
                 finish_reason = "stop"
             llm_response.set_token_count(num_tokens, completion_tokens)
             llm_response.add_last_delta(finish_reasons=[finish_reason])
-            yield llm_response
+            # yield llm_response ## Dont Yield, because text has not changed!
 
         return async_generator()

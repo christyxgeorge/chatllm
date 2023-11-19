@@ -49,18 +49,18 @@ class BaseLLMProvider(ABC):
             "config_class": config_class,
         }
 
-    @classmethod
-    def model_config(cls, model_config: Dict[str, Any]) -> LLMConfig:
+    @staticmethod
+    def provider_class(provider):
+        provider_info = BaseLLMProvider.llm_providers[provider]
+        return provider_info["class"]
+
+    @staticmethod
+    def llm_config(model_config: Dict[str, Any]) -> LLMConfig:
         """Load the model config."""
         provider_key = model_config["provider"]
         config_class = BaseLLMProvider.llm_providers[provider_key]["config_class"]
         llm_config = config_class.create_config(model_config)
         return llm_config
-
-    @staticmethod
-    def provider_class(provider):
-        provider_info = BaseLLMProvider.llm_providers[provider]
-        return provider_info["class"]
 
     @abstractmethod
     async def load(self, **kwargs: Any) -> None:

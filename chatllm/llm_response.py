@@ -62,6 +62,9 @@ class LLMResponse(BaseModel):
     response_sequences: List[str] = []
     last_tokens: List[str] = [""] * num_sequences
 
+    warnings: List[str] = []
+    """Any warnings encountered in between and to be included in the summary"""
+
     @model_validator(mode="before")
     def set_default_values(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         values["unique_id"] = f"cllm-{uuid.uuid4()}"
@@ -78,10 +81,13 @@ class LLMResponse(BaseModel):
         self.finish_reasons |= set(finish_reasons)
         self.end_time = datetime.now()
 
-    def set_openai_response(self, response: Dict[str, Any]) -> None:
+    def set_openai_response(self, response: Dict[str, Any], chat_completion=True) -> None:
         """Set the LLM response message, when the response is not streamed (all at once))"""
         choices = response.get("choices", [])
-        response_texts = [res["message"]["content"] for res in choices]
+        if chat_completion:
+            response_texts = [res["message"]["content"] for res in choices]
+        else:
+            response_texts = [res["text"] for res in choices]
         finish_reasons = [res["finish_reason"] for res in choices]
         self.set_response(response_texts, finish_reasons=finish_reasons)
         self.set_api_usage(response["usage"])
@@ -134,12 +140,12 @@ class LLMResponse(BaseModel):
 
     def set_token_count(self, prompt_count, completion_count) -> None:
         if self.prompt_tokens > 0 and self.prompt_tokens != prompt_count:
-            logger.warning(
+            self.warnings.append(
                 f"Prompt Token Count {prompt_count} is different "
-                f"from the computed value: {self.prompt_tokens}"
+                "from the computed value: {self.prompt_tokens}"
             )
         if self.completion_tokens > 0 and self.completion_tokens != completion_count:
-            logger.warning(
+            self.warnings.append(
                 f"Completion Token Count {completion_count} is different "
                 f"from the computed value: {self.completion_tokens}"
             )
@@ -172,6 +178,7 @@ class LLMResponse(BaseModel):
             "completion_tokens": self.completion_tokens,
             "total_tokens": self.prompt_tokens + self.completion_tokens,
         }
+        print("\nSummary: ")  # noqa: T201
         print(f"    Model: {self.model}")  # noqa: T201
         print(f"    Computed Usage = {json.dumps(usage or {})}")  # noqa: T201
         if self.api_usage:
@@ -185,7 +192,7 @@ class LLMResponse(BaseModel):
             tkn_gen_time = (
                 self.end_time - self.first_token_time  # type: ignore[operator]
             ).total_seconds()
-            tkn_gen_str = "Time between first token and last token:"  # nosec
+            tkn_gen_str = "    Time between first token and last token:"  # nosec
             tkn_gen_str = f"{tkn_gen_str} {tkn_gen_time:.03f} secs"
         else:
             tkn_gen_str = ""  # nosec
@@ -199,6 +206,9 @@ class LLMResponse(BaseModel):
             if usage
             else "Not Available"
         )
-        summary_str = f"Time Taken: {elapsed_sec_str} ({tokens_per_sec})"
+        summary_str = f"    Time Taken: {elapsed_sec_str} ({tokens_per_sec})"
+        for w in self.warnings:
+            print(" => Warning: ", w)  # noqa: T201
+
         print(summary_str)  # noqa: T201
         print("=" * 130)  # noqa: T201

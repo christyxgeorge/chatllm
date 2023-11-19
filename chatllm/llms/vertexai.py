@@ -16,11 +16,13 @@ from vertexai.language_models import (
     CodeGenerationModel,
     TextGenerationModel,
 )
+from vertexai.preview.language_models import (
+    TextGenerationModel as TextGenerationModelPreview,
+)
 
 from chatllm.llm_params import (
     LengthPenalty,
     LLMConfig,
-    LLMModelType,
     LLMParam,
     MaxTokens,
     NumSequences,
@@ -40,6 +42,7 @@ VERTEX_CLASSES = {
     "code_chat": CodeChatModel,
     "code_gen": CodeGenerationModel,
 }
+DEFAULT_VERTEX_CLASS = TextGenerationModel
 
 
 class VertexConfig(LLMConfig):
@@ -54,15 +57,22 @@ class VertexConfig(LLMConfig):
     num_sequences: LLMParam = NumSequences(name="candidate_count", min=1, max=8, default=1)
     top_k: LLMParam = TopK(min=0, max=40, default=40, step=10)
 
+    billing_model: str = "char"  # Character based billing!
+
+    preview: bool = False  # Use the preview class
     # class to be used:
-    vertex_class: Any = TextGenerationModel
+    vertex_class: Any = DEFAULT_VERTEX_CLASS
 
     @model_validator(mode="after")
     @classmethod
     def setup_vertex_class(cls, vconfig: Any) -> Any:
         """Validate the config"""
         model_type = vconfig.mtype.value
-        vconfig.vertex_class = VERTEX_CLASSES.get(model_type, TextGenerationModel)
+        vconfig.vertex_class = VERTEX_CLASSES.get(model_type, DEFAULT_VERTEX_CLASS)
+        if vconfig.preview:
+            # Use the preview class for preview model [Example: chat-bison-32k]
+            vconfig.vertex_class = TextGenerationModelPreview
+        logger.info(f"Model Class for {vconfig.name}: {vconfig.vertex_class}")
         return vconfig
 
 
@@ -130,7 +140,7 @@ class VertexApi(BaseLLMProvider):
         llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)
 
         # TODO: Check predict_async and send_message_async [Get a not awaited error]!
-        if self.model_type == LLMModelType.CHAT_MODEL:
+        if self.model_type.is_chat_model:
             system_prompt = prompt_value.get_system_prompt()
             chat = self.llm.start_chat(context=system_prompt)
             prediction = chat.send_message(formatted_prompt, **validated_kwargs)
@@ -154,7 +164,7 @@ class VertexApi(BaseLLMProvider):
         validated_kwargs.pop("candidate_count")
 
         llm_response = LLMResponse(model=self.model, prompt_tokens=num_tokens)
-        if self.model_type == LLMModelType.CHAT_MODEL:
+        if self.model_type.is_chat_model:
             system_prompt = prompt_value.get_system_prompt()
             chat = self.llm.start_chat(context=system_prompt)
             prediction = chat.send_message_streaming_async(formatted_prompt, **validated_kwargs)

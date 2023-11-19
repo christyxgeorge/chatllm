@@ -22,6 +22,10 @@ class LLMModelType(str, Enum):
     CODE_GEN_MODEL = "code_gen"  # Code Generation Model
     CODE_CHAT_MODEL = "code_chat"  # Code Chatting Model
 
+    @property
+    def is_chat_model(model) -> bool:
+        return model in [LLMModelType.CHAT_MODEL, LLMModelType.CODE_CHAT_MODEL]
+
 
 class LLMParam(BaseModel):
     name: str
