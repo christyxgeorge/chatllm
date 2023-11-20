@@ -1,7 +1,8 @@
 import json
 import logging
 
-from typing import Any, AsyncGenerator, Dict
+from pathlib import Path
+from typing import Any, AsyncGenerator, Dict, List
 
 from pydantic import BaseModel
 
@@ -32,6 +33,7 @@ class LLMSession:
         self.model_config: LLMConfig | None = model_cfg
         self.system_prompt_type = "simple"
         self.system_prompt = simple_system_prompt
+        self.files: List[str] = []
 
     def get_model_params(self) -> Dict[str, LLMParam]:
         assert self.model_config is not None, f"Model {self.model_name} not loaded"  # nosec
@@ -68,6 +70,13 @@ class LLMSession:
         else:
             sprompt_value = StringPromptValue(text=user_query)
             return sprompt_value
+
+    def add_file(self, file_name: str) -> None:
+        """Add a file to the session"""
+        mpath = Path(file_name)
+        if not mpath.is_file():
+            raise FileNotFoundError(f"File {file_name} does not exist")
+        self.files.append(file_name)
 
     async def run_stream(
         self,

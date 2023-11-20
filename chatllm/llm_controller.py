@@ -4,6 +4,7 @@ import json
 import logging
 import os
 
+from pathlib import Path
 from typing import Dict, List
 
 from chatllm.llm_params import LLMConfig
@@ -25,10 +26,19 @@ class LLMController:
         self.load_models()
         self.session = self.create_session()
 
+    def check_path(self, mfile: str) -> Path:
+        """Check if the file exists in the path"""
+        mpath = Path(mfile)
+        if not mpath.is_file():
+            mpath = Path(os.environ["CHATLLM_ROOT"]) / "chatllm/data" / mfile
+        if not mpath.is_file():
+            raise FileNotFoundError(f"Model file [{mfile}] not found")
+        return mpath
+
     def load_models(self, mfile=None) -> None:
         """Load Models from model definition file"""
         model_file = mfile or "models.json"
-        models_file = os.environ["CHATLLM_ROOT"] + "/chatllm/data/" + model_file
+        models_file = self.check_path(model_file)
         logger.info(f"Loading Models from {models_file}")
         models_loaded = 0
         with open(models_file) as f:

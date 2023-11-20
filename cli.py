@@ -360,11 +360,19 @@ def set_system_prompt(obj, prompt_type):
         )
 
 
-@cli.command(name="clear")
+@cli.command(name="file")
+@click.argument("file_name", required=False)
 @click.pass_obj
-def llm_clear_history(obj) -> None:
-    """Clear History'"""
-    obj.llm_controller.clear_history()
+def llm_add_file(obj, file_name) -> None:
+    """Add File for querying!"""
+    try:
+        if file_name is None:
+            files = obj.llm_controller.session.files
+            click.echo(f"Files: {files}")
+        else:
+            obj.llm_controller.session.add_file(file_name)
+    except FileNotFoundError as exc:
+        click.echo(exc)
 
 
 @cli.command(name="history")
@@ -386,6 +394,13 @@ def llm_show_history(obj) -> None:
         click.echo("No History Entries found\n")
 
 
+@cli.command(name="clear")
+@click.pass_obj
+def llm_clear_history(obj) -> None:
+    """Clear History'"""
+    obj.llm_controller.clear_history()
+
+
 # ===========================================================================================
 # LLM Commands
 # ===========================================================================================
@@ -400,7 +415,10 @@ def model_list(obj, action, modelfile=None, provider=False):
     """List Models/Set Model"""
     click.echo("")  # Just a newline!
     if action == "add" and modelfile:
-        obj.load_models(modelfile)
+        try:
+            obj.load_models(modelfile)
+        except FileNotFoundError as exc:
+            click.echo(exc)
 
     elif action == "all":
         click.echo(Fore.CYAN + "Available Models by provider:" + Fore.RESET)
