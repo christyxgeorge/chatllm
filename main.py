@@ -80,6 +80,7 @@ if __name__ == "__main__":
 
     cmdline_args = copy.deepcopy(sys.argv)
     args = parse_args(cmdline_args[1:])  # Exclude program name!
+    initialize_config(verbose=args.verbose, debug=args.debug)
 
     if args.command == "shell":
         from cli import cli
@@ -88,9 +89,7 @@ if __name__ == "__main__":
         if "shell" not in sys.argv:
             sys.argv.insert(1, "shell")
 
-        initialize_config(verbose=args.verbose, debug=args.debug)
         cli()  # pylint: disable=no-value-for-parameter
     else:
-        initialize_config(verbose=args.verbose, debug=args.debug)
         # Start Gradio App
         gradio_app(args)

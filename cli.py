@@ -80,6 +80,10 @@ class ChatLLMContext(object):
             cli.add_command(LLM(name=command))
         self.show_model_info()
 
+    def query_index(self, user_query: str):
+        """Query the Session Index"""
+        return self.llm_controller.session.query_index(user_query)
+
     async def llm_stream(self, user_query: str, **llm_kwargs) -> str:
         stream = self.session.run_stream(
             user_query, verbose=self.verbose, word_by_word=True, **llm_kwargs
@@ -394,6 +398,22 @@ def llm_show_history(obj) -> None:
         click.echo("No History Entries found\n")
 
 
+@cli.command(name="collections")
+@click.pass_obj
+def llm_show_index_count(obj) -> None:
+    """Show the indexes"""
+    index_count = obj.llm_controller.session.list_indexes()
+    click.echo(f"Number of documents in the index = {index_count}\n")
+
+
+@cli.command(name="index")
+@click.pass_obj
+def llm_show_doc_count(obj) -> None:
+    """Show Number of documents in the index"""
+    doc_count = obj.llm_controller.session.get_document_count()
+    click.echo(f"Number of documents in the index = {doc_count}\n")
+
+
 @cli.command(name="clear")
 @click.pass_obj
 def llm_clear_history(obj) -> None:
@@ -454,6 +474,33 @@ def user_query(obj) -> None:
         prompt = " ".join(ctx.args)
         click.echo(f"Invoked Active LLM [{obj.model_name}] with prompt, {prompt}")
         return obj.llm_run(prompt)
+
+
+@cli.command(
+    name="qi",
+    context_settings=dict(
+        ignore_unknown_options=True,
+        allow_extra_args=True,
+    ),
+)
+@click.pass_obj
+def index_query(obj) -> None:
+    """
+    Run the user query on the current session index.
+    """
+    ctx = click.get_current_context()
+    if not ctx.args:
+        obj.show_params()
+    else:
+        prompt = " ".join(ctx.args)
+        click.echo(f"Querying Session Index with prompt, {prompt}")
+        docs = obj.query_index(prompt)
+        if docs:
+            click.echo(f"[{len(docs)}] documents Found:")
+            for i, doc in enumerate(docs):
+                click.echo(f"{i}: {doc}")
+        else:
+            click.echo("No documents found!")
 
 
 class LLMGroup(click.MultiCommand):

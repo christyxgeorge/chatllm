@@ -67,7 +67,7 @@ class LLMController:
 
             logger.info(
                 f"Loaded {models_loaded} out of {len(models)} models in file "
-                f"[Total: {len(self.llm_models)}]"
+                f"[Total: {len(self.llm_models)} models]"
             )
 
     def get_model_key_map(self) -> Dict[str, str]:
