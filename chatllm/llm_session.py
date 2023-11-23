@@ -1,12 +1,13 @@
 import json
 import logging
+import os
 
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, List
 
 import chromadb
 
-from chromadb import QueryResult
+from chromadb.config import Settings
 from pydantic import BaseModel
 
 from chatllm.llm_params import LLMConfig, LLMParam
@@ -41,10 +42,13 @@ class LLMSession:
         self.chat_history: list[LLMHistoryItem] = []
         self.files: List[str] = []
         # self.embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
-        self.chroma_client = chromadb.Client()  # In-memory clients
+        # Create an in-memory ChromaDB client (Currently, set anonymized_telemetry to False)
+        chromadb_anonymized_telemetry = os.environ.get("CHROMADB_ANONYMIZED_TELEMETRY", False)
+        self.chroma_client = chromadb.Client(
+            Settings(anonymized_telemetry=chromadb_anonymized_telemetry)
+        )
         self.index_name = "session_idx"
-        self.collection = self.chroma_client.get_or_create_collection(name=self.index_name)
-        logger.info(f"Number of documents in the index: {self.collection.count()}")
+        self.collection = None
 
     def get_model_params(self) -> Dict[str, LLMParam]:
         assert self.model_config is not None, f"Model {self.model_name} not loaded"  # nosec
@@ -57,26 +61,24 @@ class LLMSession:
         """clear the chat history"""
         self.chat_history = []
         self.files = []
-        self.chroma_client.delete_collection(self.index_name)
-        self.athena_index = self.chroma_client.get_or_create_collection(
-            name=self.index_name,
-            # metadata={"hnsw:space": "cosine"},
-            #    Hnswlib: Valid options for hnsw:space are "l2", "ip, "or "cosine"
-            # embedding_function=default_ef
-        )
+        if self.collection:
+            self.chroma_client.delete_collection(self.index_name)
 
     def get_document_count(self) -> None:
         """Show the number of documents in the session index"""
-        return self.collection.count()
+        return self.collection.count() if self.collection else 0
 
     def list_indexes(self) -> None:
         """List collections within the chroma client"""
         return self.chroma_client.list_collections()
 
-    def query_index(self, query_string) -> QueryResult:
+    def query_index(self, query_string) -> Dict[str, List[Any]] | None:
         """Query the index"""
         qresult = self.collection.query(query_texts=[query_string], n_results=10)
-        return qresult["documents"][0] if qresult["documents"] else None
+        if qresult["documents"]:
+            return {"documents": qresult["documents"][0], "metadatas": qresult["metadatas"][0]}
+        else:
+            return None
 
     def set_system_prompt(self, type: str, prompt: str = "") -> None:
         """Set the system prompt"""
@@ -110,9 +112,11 @@ class LLMSession:
     def create_indexed_prompt(self, user_query):
         documents = self.query_index(user_query)
         if documents:
+            # TODO: Need to handle docs longer than the context length
+            # context_length = self.model_config.max_context_length
             logger.info(f"{len(documents)} documents found for query: {user_query}")
             rag_prefix = "Given the following documents:"
-            rag_docs = "\n\n".join([doc for doc in documents])
+            rag_docs = "\n\n".join([doc for doc in documents["documents"]])
             rag_suffix = "\n Please answer the following question:"
             rag_prompt = f"{rag_prefix}\n{rag_docs}\n{rag_suffix}\n{user_query}"
         else:
@@ -127,10 +131,20 @@ class LLMSession:
         if not mpath.is_file():
             raise FileNotFoundError(f"File {file_name} does not exist")
         self.files.append(file_name)
+
         self.index_file(file_name)
 
     def index_file(self, file_name: str) -> None:
-        """Index a file"""
+        """Index a file, Create index if not created"""
+        if not self.collection:
+            self.collection = self.chroma_client.get_or_create_collection(
+                name=self.index_name,
+                # metadata={"hnsw:space": "cosine"},
+                #    Hnswlib: Valid options for hnsw:space are "l2", "ip, "or "cosine"
+                # embedding_function=default_ef
+            )
+            logger.info(f"Number of documents in the index: {self.collection.count()}")
+
         # documents = FitzPDFLoader().load_data(file_name)
         smart_docs = SmartPDFLoader().load_data(file_name)
 

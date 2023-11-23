@@ -184,8 +184,6 @@ class ReplicateApi(BaseLLMProvider):
                 k[0]: k[1].strip()
                 for k in (x.split(":") for x in prediction.logs.split("\n") if ":" in x)
             }
-            logger.info(f"Prediction Status = {prediction.status}")
-            logger.info(f"Prediction Logs = {prediction_logs}")
             prompt_tokens = int(prediction_logs.get("Number of tokens in prompt", 0))
             completion_tokens = int(prediction_logs.get("Number of tokens generated", 0))
             usage = {
@@ -194,7 +192,9 @@ class ReplicateApi(BaseLLMProvider):
                 "total_tokens": prompt_tokens + completion_tokens,
             }
             llm_response.set_api_usage(usage)
-            llm_response.set_extra_info(metrics=prediction.metrics)
+            llm_response.set_extra_info(
+                metrics=prediction.metrics, status=prediction.status, logs=prediction_logs
+            )
 
         except Exception as e:
             logger.warning(f"Exception while parsing prediction logs: {e}")

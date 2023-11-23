@@ -277,35 +277,6 @@ def toggle_verbose(obj):
     obj.show_context_info()
 
 
-@cli.command(name="model")
-@click.pass_obj
-@click.argument("model_key", default="null")
-def model_key(obj, model_key):
-    """List Models/Set Model"""
-    if model_key == "null":
-        obj.show_context_info()
-    elif model_key in MODEL_INFO:
-        obj.set_model(model_key)
-        obj.show_context_info()
-    else:
-        click.echo(f"Invalid Model Key: {model_key}, Valid Options are {MODEL_INFO.keys()}")
-
-
-@cli.command(name="mode")
-@click.pass_obj
-@click.argument("mode", default="batch")
-def llm_mode(obj, mode) -> None:
-    """Set Model mode ('stream' or 'batch')"""
-    if mode.startswith("stream"):
-        obj.streaming = True
-        obj.show_context_info()
-    elif mode.startswith("batch"):
-        obj.streaming = False
-        obj.show_context_info()
-    else:
-        click.echo(f"Invalid Mode: {mode}, Valid Options are 'stream' or 'batch'")
-
-
 @cli.command(name="stream")
 @click.pass_obj
 def llm_mode_stream(obj) -> None:
@@ -454,6 +425,9 @@ def model_list(obj, action, modelfile=None, provider=False):
         else:
             obj.show_model_info()
 
+        # Show current parameters
+        obj.show_context_info()
+
 
 @cli.command(
     name="q",
@@ -496,9 +470,17 @@ def index_query(obj) -> None:
         click.echo(f"Querying Session Index with prompt, {prompt}")
         docs = obj.query_index(prompt)
         if docs:
-            click.echo(f"[{len(docs)}] documents Found:")
-            for i, doc in enumerate(docs):
-                click.echo(f"{i}: {doc}")
+            docs_meta = zip(docs["documents"], docs["metadatas"])
+            total_bytes = 0
+            for i, (doc, meta) in enumerate(docs_meta):
+                click.echo(Fore.CYAN + f"{i}: {meta} => {len(doc)} bytes" + Fore.RESET)
+                click.echo(f"{doc}")
+                total_bytes += len(doc)
+            click.echo(
+                Fore.CYAN
+                + f"{len(docs['documents'])} documents found [{total_bytes} bytes]"
+                + Fore.RESET
+            )
         else:
             click.echo("No documents found!")
 

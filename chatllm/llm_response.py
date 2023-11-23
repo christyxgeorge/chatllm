@@ -180,14 +180,15 @@ class LLMResponse(BaseModel):
         }
         print("\nSummary: ")  # noqa: T201
         print(f"    Model: {self.model}")  # noqa: T201
-        print(f"    Computed Usage = {json.dumps(usage or {})}")  # noqa: T201
+        print(f"    Computed Usage: {json.dumps(usage or {})}")  # noqa: T201
         if self.api_usage:
-            print(f"    API Usage = {json.dumps(self.api_usage)}")  # noqa: T201
+            print(f"    API Usage: {json.dumps(self.api_usage)}")  # noqa: T201
         finish_reasons = "|".join(self.finish_reasons) if self.finish_reasons else "n/a"
-        print(f"    Stop Reason = {finish_reasons}")  # noqa: T201
-        if "metrics" in self.extra_info:
-            metrics_str = f"    Metrics = {json.dumps(self.extra_info['metrics'])}"
-            print(metrics_str)  # noqa: T201
+        print(f"    Stop Reason: {finish_reasons}")  # noqa: T201
+        for key, value in self.extra_info.items():
+            info_key = key.capitalize().replace("_", " ")
+            info_str = f"    LLM Info [{info_key}]: {json.dumps(value)}"
+            print(info_str)  # noqa: T201
         if self.first_token_time:
             tkn_gen_time = (
                 self.end_time - self.first_token_time  # type: ignore[operator]

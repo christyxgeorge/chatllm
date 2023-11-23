@@ -38,7 +38,8 @@ class FitzPDFLoader(BaseReader):
         logger.debug(f"Number of pages: {doc.page_count} // {doc.metadata}")
         for i, page in enumerate(doc):
             doc_page = page.get_text()
-            logger.debug(f"== Doc Page {i+1}: {len(doc_page)} chars => {doc_page}")
+            # TODO: Chunk into paragraphs... Based on "\n\n" before creating docs
+            logger.info(f"== Doc Page {i+1}: {len(doc_page)} chars => {doc_page}")
             processed_doc = self.preprocess(doc_page)
             document = Document(
                 text=processed_doc,
