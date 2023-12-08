@@ -49,7 +49,6 @@ class Palm2Config(LLMConfig):
     palm_supported_methods: List[str] = []
 
     @model_validator(mode="after")
-    @classmethod
     def setup_palm2_model_info(cls, pconfig: Any) -> Any:
         """Validate the config"""
         palm_models = Palm2Api.get_palm_models()
@@ -74,7 +73,9 @@ class Palm2Api(BaseLLMProvider):
         # palm.configure(credentials=credentials)
         palm.configure(api_key=os.environ["PALM2_API_KEY"])
         self.llm = palm
-        assert isinstance(model_cfg, Palm2Config), "Configuration File not PALM Specific"  # nosec
+        assert isinstance(  # nosec  # noqa: S101
+            model_cfg, Palm2Config
+        ), "Configuration File not PALM Specific"
         self.palm_model_name = model_cfg.palm_model_name
         self.supported_methods = model_cfg.palm_supported_methods
         logger.info(f"Supported Methods: {self.supported_methods}")

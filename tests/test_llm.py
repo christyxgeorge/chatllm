@@ -69,7 +69,7 @@ class TestLLMGeneration:
 
         provider, model = provider_model.split(":", maxsplit=2)
         logger.info(f"Running [{mode}] test for {provider}, model = {model}")
-        user_query = prompt or random.choice(EXAMPLES)[0]  # nosec
+        user_query = prompt or random.choice(EXAMPLES)[0]  # nosec # noqa: S311
         return user_query, llm_kwargs
 
     @pytest.mark.asyncio
@@ -83,10 +83,10 @@ class TestLLMGeneration:
             )
             stream = llm_controller.session.run_batch(user_query, **llm_kwargs)
             async for response_type, response_text in stream:
-                assert response_type not in [
+                assert response_type not in [  # nosec  # noqa: S101
                     "error",
                     "warning",
-                ], f"{response_text}"  # nosec
+                ], f"{response_text}"
                 if response_type != "done":
                     logger.info(f"Response [{response_type}]: {response_text}")
 
@@ -101,7 +101,7 @@ class TestLLMGeneration:
             )
             stream = llm_controller.session.run_stream(user_query, **llm_kwargs)
             async for response_type, response_text in stream:  # type:ignore
-                assert response_type not in [
+                assert response_type not in [  # nosec  # noqa: S101
                     "error",
                     "warning",
-                ], f"{response_text}"  # nosec
+                ], f"{response_text}"

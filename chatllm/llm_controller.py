@@ -45,25 +45,29 @@ class LLMController:
             models = json.load(f)
             model_keys = [llm_config.key for llm_config in self.llm_models.values()]
             for model_config in models:
-                llm_config = BaseLLMProvider.llm_config(model_config)
-                logger.debug(f"LLM Config = {llm_config}")
+                try:
+                    llm_config = BaseLLMProvider.llm_config(model_config)
+                    logger.debug(f"LLM Config = {llm_config}")
 
-                # Add to provider map and model map
-                prov_models = self.provider_models.get(model_config["provider"], [])
-                if llm_config.name in prov_models or llm_config.name in self.llm_models:
-                    logger.warning(
-                        f"Duplicate model {llm_config.name} for provider {model_config['provider']}"
-                    )
-                elif llm_config.key and llm_config.key in model_keys:
-                    logger.warning(
-                        f"Duplicate model key {llm_config.key} for provider {model_config['provider']}"
-                    )
-                else:
-                    models_loaded += 1
-                    prov_models.append(llm_config.name)
-                    self.provider_models[model_config["provider"]] = prov_models
-                    self.llm_models[llm_config.name] = llm_config
-                    model_keys.append(llm_config.key)
+                    # Add to provider map and model map
+                    prov_models = self.provider_models.get(model_config["provider"], [])
+                    if llm_config.name in prov_models or llm_config.name in self.llm_models:
+                        logger.warning(
+                            f"Duplicate model {llm_config.name} for provider {model_config['provider']}"
+                        )
+                    elif llm_config.key and llm_config.key in model_keys:
+                        logger.warning(
+                            f"Duplicate model key {llm_config.key} for provider {model_config['provider']}"
+                        )
+                    else:
+                        models_loaded += 1
+                        prov_models.append(llm_config.name)
+                        self.provider_models[model_config["provider"]] = prov_models
+                        self.llm_models[llm_config.name] = llm_config
+                        model_keys.append(llm_config.key)
+                except Exception as e:
+                    model_name = f"{model_config['provider']}/{model_config['name']}"
+                    logger.warning(f"Unable to load model {model_name} => {e}")
 
             logger.info(
                 f"Loaded {models_loaded} out of {len(models)} models in file "
@@ -144,6 +148,6 @@ class LLMController:
             "custom": "",
         }
 
-    def clear_history(self) -> None:
+    def clear_session(self) -> None:
         """Clear the history"""
-        self.session.clear_history()
+        self.session.clear()

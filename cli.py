@@ -93,10 +93,10 @@ class ChatLLMContext(object):
             if start:
                 click.echo("Response: ", nl=False)
                 start = False
-            assert response_type not in [
+            assert response_type not in [  # nosec  # noqa: S101
                 "error",
                 "warning",
-            ], f"{response_text}"  # nosec
+            ], f"{response_text}"
             click.echo(response_text, nl=False)
             if response_type == "done":
                 click.echo("")  # New line
@@ -280,7 +280,7 @@ def toggle_verbose(obj):
 @cli.command(name="stream")
 @click.pass_obj
 def llm_mode_stream(obj) -> None:
-    """Set Model mode to 'stream'"""
+    """Set processing mode to 'stream'"""
     obj.streaming = True
     obj.show_context_info()
 
@@ -288,7 +288,7 @@ def llm_mode_stream(obj) -> None:
 @cli.command(name="batch")
 @click.pass_obj
 def llm_mode_batch(obj) -> None:
-    """Set Model mode to 'batch'"""
+    """Set processing mode to 'batch'"""
     obj.streaming = False
     obj.show_context_info()
 
@@ -335,21 +335,6 @@ def set_system_prompt(obj, prompt_type):
         )
 
 
-@cli.command(name="file")
-@click.argument("file_name", required=False)
-@click.pass_obj
-def llm_add_file(obj, file_name) -> None:
-    """Add File for querying!"""
-    try:
-        if file_name is None:
-            files = obj.llm_controller.session.files
-            click.echo(f"Files: {files}")
-        else:
-            obj.llm_controller.session.add_file(file_name)
-    except FileNotFoundError as exc:
-        click.echo(exc)
-
-
 @cli.command(name="history")
 @click.pass_obj
 def llm_show_history(obj) -> None:
@@ -369,27 +354,45 @@ def llm_show_history(obj) -> None:
         click.echo("No History Entries found\n")
 
 
-@cli.command(name="collections")
-@click.pass_obj
-def llm_show_index_count(obj) -> None:
-    """Show the indexes"""
-    index_count = obj.llm_controller.session.list_indexes()
-    click.echo(f"Number of documents in the index = {index_count}\n")
-
-
+# Commands related to RAG / Document Indexing
 @cli.command(name="index")
+@click.argument("file_name", required=False)
 @click.pass_obj
-def llm_show_doc_count(obj) -> None:
-    """Show Number of documents in the index"""
-    doc_count = obj.llm_controller.session.get_document_count()
-    click.echo(f"Number of documents in the index = {doc_count}\n")
+def llm_add_file(obj, file_name) -> None:
+    """Index File for querying!"""
+    try:
+        if file_name is None:
+            files = obj.llm_controller.session.files
+            if files:
+                click.echo(f"Files: {files}")
+                doc_count = obj.llm_controller.session.get_document_count()
+                click.echo(f"Number of documents in the index = {doc_count}\n")
+            else:
+                click.echo("No files in the index\n")
+        else:
+            obj.llm_controller.session.add_file(file_name)
+    except FileNotFoundError as exc:
+        click.echo(exc)
+
+
+@cli.command(name="summary")
+@click.pass_obj
+def llm_summary(obj) -> None:
+    """Show Summary of the documents in the session index"""
+    index_count = obj.llm_controller.session.list_indexes()
+    if index_count:
+        doc_count = obj.llm_controller.session.get_document_count()
+        click.echo(f"Summary of documents in the index: {doc_count}")
+        return obj.llm_run(None, summarize=True, max_tokens=2048)
+    else:
+        click.echo("Nothing to Summarize, use `index` first!\n")
 
 
 @cli.command(name="clear")
 @click.pass_obj
-def llm_clear_history(obj) -> None:
+def llm_clear_session(obj) -> None:
     """Clear History'"""
-    obj.llm_controller.clear_history()
+    obj.llm_controller.clear_session()
 
 
 # ===========================================================================================
@@ -500,7 +503,9 @@ class LLM(click.Command):
         super().__init__(name)
         self.allow_extra_args = True
         self.ignore_unknown_options = True
-        self.help = f"Run {MODEL_INFO.get(self.name)}"
+        self.help = (
+            "Run User Query using " + Fore.CYAN + f"{MODEL_INFO.get(self.name)}" + Fore.RESET
+        )
 
     def invoke(self, ctx) -> None:
         """Invoke LLM"""

@@ -48,6 +48,7 @@ class SmartPDFLoader(BaseReader):
                     "chunk_type": chunk.tag,
                     "page_idx": chunk.page_idx,
                     "file_name": pdf_path_or_url,
+                    "level": chunk.level,
                 },
             )
             results.append(document)

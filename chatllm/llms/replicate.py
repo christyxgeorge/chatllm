@@ -193,7 +193,10 @@ class ReplicateApi(BaseLLMProvider):
             }
             llm_response.set_api_usage(usage)
             llm_response.set_extra_info(
-                metrics=prediction.metrics, status=prediction.status, logs=prediction_logs
+                metrics=prediction.metrics,
+                status=prediction.status,
+                xlogs=prediction.logs,  # Added to see what we are doing wrong!
+                logs=prediction_logs,
             )
 
         except Exception as e:

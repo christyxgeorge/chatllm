@@ -51,13 +51,15 @@ class LLMSession:
         self.collection = None
 
     def get_model_params(self) -> Dict[str, LLMParam]:
-        assert self.model_config is not None, f"Model {self.model_name} not loaded"  # nosec
+        assert (  # nosec  # noqa: S101
+            self.model_config is not None
+        ), f"Model {self.model_name} not loaded"
         return self.model_config.get_params()
 
     def add_history(self, text: str, role: ChatRole) -> None:
         self.chat_history.append(LLMHistoryItem(text=text, role=role))
 
-    def clear_history(self) -> None:
+    def clear(self) -> None:
         """clear the chat history"""
         self.chat_history = []
         self.files = []
@@ -89,9 +91,11 @@ class LLMSession:
             self.system_prompt_type = "none"
             self.system_prompt = ""
 
-    def create_prompt_value(self, user_query) -> PromptValue:
-        """Create a PromptValue object"""
-        if self.files:
+    def create_prompt_value(self, user_query, summarize=False) -> PromptValue:
+        """Create a PromptValue object for Document Querying or Chatting"""
+        if summarize:
+            user_query = self.create_summarization_prompt(user_query)
+        elif self.files:
             user_query = self.create_indexed_prompt(user_query)
 
         if self.system_prompt:
@@ -114,16 +118,26 @@ class LLMSession:
         if documents:
             # TODO: Need to handle docs longer than the context length
             # context_length = self.model_config.max_context_length
-            logger.info(f"{len(documents)} documents found for query: {user_query}")
-            rag_prefix = "Given the following documents:"
-            rag_docs = "\n\n".join([doc for doc in documents["documents"]])
-            rag_suffix = "\n Please answer the following question:"
-            rag_prompt = f"{rag_prefix}\n{rag_docs}\n{rag_suffix}\n{user_query}"
+            logger.info(f"{len(documents['documents'])} documents found for query: {user_query}")
+            prompt_prefix = "Given the following documents:"
+            index_docs = "\n\n".join([doc for doc in documents["documents"]])
+            prompt_suffix = "\n Please answer the following question:"
+            final_prompt = f"{prompt_prefix}\n{index_docs}\n{prompt_suffix}\n{user_query}"
         else:
             # TODO: Need to return a warning to the user.
             logger.info(f"No documents found for query: {user_query}")
-            rag_prompt = user_query
-        return rag_prompt
+            final_prompt = user_query
+        return final_prompt
+
+    def create_summarization_prompt(self, user_query):
+        documents = self.collection.get()
+        # TODO: Need to handle docs longer than the context length
+        # context_length = self.model_config.max_context_length
+        # logger.info(f"{len(documents['documents'])} document chunks found")
+        prompt_prefix = "Given the following documents"
+        index_docs = "\n\n".join([doc for doc in documents["documents"]])
+        final_prompt = f"{prompt_prefix}\n{index_docs}\n{user_query}"
+        return final_prompt
 
     def add_file(self, file_name: str) -> None:
         """Add a file to the session"""
@@ -143,6 +157,7 @@ class LLMSession:
                 #    Hnswlib: Valid options for hnsw:space are "l2", "ip, "or "cosine"
                 # embedding_function=default_ef
             )
+        else:
             logger.info(f"Number of documents in the index: {self.collection.count()}")
 
         # documents = FitzPDFLoader().load_data(file_name)
@@ -150,7 +165,7 @@ class LLMSession:
 
         texts = [doc.text for doc in smart_docs]
         metadata = [doc.metadata for doc in smart_docs]
-        ids = [f"{file_name}.{i+1}" for i in range(len(smart_docs))]
+        ids = [f"{file_name}.{i+1}" for i in range(len(smart_docs))]  # TODO: Can we do MD5?
         # embeddings = self.embedding_model.encode([doc.text for doc in smart_docs])
         # self.collection.add(embeddings=embeddings, documents=texts, metadatas=metadata, ids=ids)
         self.collection.add(documents=texts, metadatas=metadata, ids=ids)
@@ -163,7 +178,7 @@ class LLMSession:
         word_by_word=False,
         **kwargs,
     ) -> AsyncGenerator[Any | str, Any]:
-        assert self.llm is not None, f"Model {self.model_name} not loaded"  # nosec
+        assert self.llm is not None, f"Model {self.model_name} not loaded"  # nosec  # noqa: S101
 
         # TODO: Need to move this out to the CLI/Gradio layer?
         if verbose:
@@ -172,7 +187,10 @@ class LLMSession:
             logger.info(f"Model: {self.llm.model_name}, Params = {json.dumps(kwargs or {})}")
 
         try:
-            prompt_value: PromptValue = self.create_prompt_value(user_query)
+            summarize = kwargs.pop("summarize") if "summarize" in kwargs else False
+            if summarize and not user_query:
+                user_query = "Please summarize in a concise manner"
+            prompt_value: PromptValue = self.create_prompt_value(user_query, summarize=summarize)
             self.add_history(user_query, role=ChatRole.USER)
             stream = await self.llm.generate_stream(prompt_value, verbose=verbose, **kwargs)
             async for llm_response in stream:
@@ -203,14 +221,17 @@ class LLMSession:
         verbose=False,
         **kwargs,
     ) -> Any:
-        assert self.llm is not None, f"Model {self.model_name} not loaded"  # nosec
+        assert self.llm is not None, f"Model {self.model_name} not loaded"  # nosec  # noqa: S101
         if verbose:
             logger.info("=" * 50)
             logger.info(f"User Query = {user_query}")
             logger.info(f"Model: {self.llm.model_name}, Params = {json.dumps(kwargs or {})}")
 
         try:
-            prompt_value: PromptValue = self.create_prompt_value(user_query)
+            summarize = kwargs.pop("summarize") if "summarize" in kwargs else False
+            if summarize and not user_query:
+                user_query = "Please summarize in a concise manner"
+            prompt_value: PromptValue = self.create_prompt_value(user_query, summarize=summarize)
             self.add_history(user_query, role=ChatRole.USER)
             llm_response = await self.llm.generate(prompt_value, verbose=verbose, **kwargs)
             response_text = llm_response.get_first_sequence()

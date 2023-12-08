@@ -175,7 +175,6 @@ class LLMConfig(BaseModel, ABC):
     """Store the over_ride info to set values after LLMParam object creation"""
 
     @model_validator(mode="wrap")
-    @classmethod
     def validate_config(
         cls, values: Dict[str, Any], handler: ValidatorFunctionWrapHandler, _info: ValidationInfo
     ) -> "LLMConfig":

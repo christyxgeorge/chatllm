@@ -64,7 +64,6 @@ class VertexConfig(LLMConfig):
     vertex_class: Any = DEFAULT_VERTEX_CLASS
 
     @model_validator(mode="after")
-    @classmethod
     def setup_vertex_class(cls, vconfig: Any) -> Any:
         """Validate the config"""
         model_type = vconfig.mtype.value
@@ -93,9 +92,9 @@ class VertexApi(BaseLLMProvider):
             staging_bucket=staging_bucket,
             credentials=credentials,
         )
-        assert isinstance(
+        assert isinstance(  # nosec  # noqa: S101
             self.model_cfg, VertexConfig
-        ), "Configuration not Vertex Specific"  # nosec
+        ), "Configuration not Vertex Specific"
         self.llm = self.model_cfg.vertex_class.from_pretrained(model_name)
         self.model_type = self.model_cfg.mtype
 
