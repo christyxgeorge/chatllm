@@ -194,6 +194,7 @@ llm_session = llm_controller.change_model()
 
 
 def setup_gradio(verbose=False):
+    logger.info("Setting up Gradio...")
     # Gradio Interface
     # with gr.Blocks(title=title, theme=gr.themes.Base(), css=css) as demo:
     with gr.Blocks(title=title) as demo:

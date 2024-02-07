@@ -46,7 +46,7 @@ def parse_args(cmdline_args) -> argparse.Namespace:
     return args
 
 
-def initialize_config(verbose=False, debug=False) -> None:
+def initialize_logging(verbose=False, debug=False) -> None:
     # ===========================================================================================
     # Logging Setup
     # Django method = logging.config.dictConfig(config)
@@ -80,7 +80,7 @@ if __name__ == "__main__":
 
     cmdline_args = copy.deepcopy(sys.argv)
     args = parse_args(cmdline_args[1:])  # Exclude program name!
-    initialize_config(verbose=args.verbose, debug=args.debug)
+    initialize_logging(verbose=args.verbose, debug=args.debug)
 
     if args.command == "shell":
         from cli import cli
